@@ -34,6 +34,7 @@ func (w *wtx) deletePeer(ctx context.Context, name, actor string, by *approvedOn
 	if err != nil {
 		return err
 	}
+	before := clonePeer(p)
 	if err := w.Bucket(bPeers).Delete([]byte(name)); err != nil {
 		return err
 	}
@@ -60,12 +61,30 @@ func (w *wtx) deletePeer(ctx context.Context, name, actor string, by *approvedOn
 	}
 	// And no crew member may mail it: whoever is added under the name
 	// next is another yard, which the operator has not allowed anyone.
+	crewBefore, err := w.crewClones()
+	if err != nil {
+		return err
+	}
 	lost, err := dropPeerSettings(w.Tx, name)
 	if err != nil {
 		return err
 	}
 	if len(lost[MailPeers]) > 0 {
 		data["crew"] = lost[MailPeers]
+	}
+	// The settings the removal rewrote name the peer in a member's config
+	// whole, which grant holds read: each such member tells here, at the
+	// removal that rewrote it (runask_stale.go).
+	for _, member := range lost[MailPeers] {
+		var after CrewMember
+		if ok, err := get(w.Tx, bCrew, member, &after); err != nil {
+			return err
+		} else if !ok {
+			continue
+		}
+		if err := w.tellCrewStale(member, crewBefore[member], &after, actor); err != nil {
+			return err
+		}
 	}
 	// The beads it sent stay, and say whose they were; nothing is
 	// returned for them.
@@ -111,5 +130,10 @@ func (w *wtx) deletePeer(ctx context.Context, name, actor string, by *approvedOn
 	if by != nil {
 		data["approved"] = by
 	}
-	return w.event("", "peer_removed", actor, data)
+	if err := w.event("", "peer_removed", actor, data); err != nil {
+		return err
+	}
+	// The removal tells beside its peer_removed, with nothing after it:
+	// a hold of the link is stale however it read it (runask_stale.go).
+	return w.tellPeerStale(name, before, nil, actor)
 }

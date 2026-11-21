@@ -281,7 +281,8 @@ func gitDepot(t *testing.T, st store.API) store.Depot {
 	}
 	git("init", "-q", "-b", "main")
 	ownDepotFiles(t, depot)
-	if err := st.PutDepot(context.Background(), depot, "me"); err != nil {
+	actor := testOperator(t, st)
+	if err := st.PutDepot(context.Background(), depot, actor); err != nil {
 		t.Fatal(err)
 	}
 	return depot
@@ -297,7 +298,8 @@ func dirDepot(t *testing.T, st store.API) store.Depot {
 	dir := t.TempDir()
 	depot := store.Depot{Name: "web", Path: dir, Kind: store.DepotDir}
 	ownDepotFiles(t, depot)
-	if err := st.PutDepot(context.Background(), depot, "me"); err != nil {
+	actor := testOperator(t, st)
+	if err := st.PutDepot(context.Background(), depot, actor); err != nil {
 		t.Fatal(err)
 	}
 	return depot
@@ -361,7 +363,8 @@ func committedDepot(t *testing.T, st store.API) store.Depot {
 		t.Fatal(err)
 	}
 	depot := store.Depot{Name: "web", Path: dir, Base: "main", Kind: store.DepotGit}
-	if err := st.PutDepot(context.Background(), depot, "me"); err != nil {
+	actor := testOperator(t, st)
+	if err := st.PutDepot(context.Background(), depot, actor); err != nil {
 		t.Fatal(err)
 	}
 	return depot
@@ -1216,8 +1219,9 @@ func TestDoctorLoginServiceDepots(t *testing.T) {
 	if _, err := run(t, a().rootCmd(), "init", "--harness", "claude"); err != nil {
 		t.Fatal(err)
 	}
+	operator := testOperator(t, st)
 	for _, r := range depots[:2] {
-		if err := st.PutDepot(ctx, r, "me"); err != nil {
+		if err := st.PutDepot(ctx, r, operator); err != nil {
 			t.Fatal(err)
 		}
 	}

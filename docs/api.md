@@ -551,7 +551,7 @@ A note was added to the bead: a plain note, a question (an ask), or an answer (a
 | `at` | time | when |
 | `data.note` | number, may be absent | the note's seq; absent on a question another yard asked |
 | `data.ask` | number, may be absent | the ask's seq on its bead, for a question another yard asked; absent otherwise |
-| `data.witness` | string, may be absent | how a strong approval was witnessed: `fresh sign-in` in the hosted web, `terminal` on the socket; absent otherwise, and on an approval through a device, which names the device in `data.via` instead |
+| `data.witness` | string, may be absent | how a weighty approval was witnessed: `fresh sign-in` in the hosted web, `terminal` on the socket; absent otherwise, and on an approval through a device, which names the device in `data.via` instead |
 
 ### A bead was closed: `closed`
 
@@ -7774,7 +7774,7 @@ yard's line for it and what this card does. A routine card has none.
 |---|---|---|
 | `credential` | gives a credential or an address to the yard | every secret ask; `user key`; a setup ask, which takes the account |
 | `as-user` | lets calls or words count as a person's | `source grant ... --as <user>`; a secret ask with `secret.as`; `user identity`; a mapping ask, whose picks write a user's identity |
-| `outside` | lets the yard change something outside it | `source grant` of an update call, or of a preset holding one; `source set` of `calls_per_hour` or `updates_per_hour` that raises the updates a caller can make in an hour, the lower of the two; a setup ask whose presets grant an update call; `pack apply --depot` whose mappings grant an update call or let a crew member open threads |
+| `outside` | lets the yard change something outside it | `source grant` of an update call, or of a preset holding one; `source set` of `calls_per_hour` or `updates_per_hour` that raises the updates a caller can make in an hour, the lower of the two; `source set` of `base` or `host`; a setup ask whose presets grant an update call; `pack apply --depot` whose mappings grant an update call or let a crew member open threads |
 | `code` | brings a program the yard will run | a `source add` that replaces a source, whatever it changes; `source add` and `pack apply` whose command files are new or differ from the copies that stand; a setup ask whose pack brings such files; a depot pack's first install whose plan makes files, groups or crew; `pack apply --depot` with a `--bind`, or whose mappings grant a call that sends a file; `crew add`, which starts a new agent on the role its card shows whole; `group add`, which starts sessions of the command or the agent its card shows; a general run card (`--run-word`, `G:`), which runs any command no card fits as typed and so always weighs `code` |
 | `trust` | widens who the yard listens to | `user add`; `peer allow` adding a kind, raising the mail limit, or exposing, trusting or sending on (`--expose`, `--trust`, `--reach`); `peer add`; `peer set`; `crew set peers=` adding a peer; `hook add`; `pack apply --depot` with `--members` |
 | `reads` | widens what a standing grant of read reaches | `source add` or `pack apply`, or a setup ask, that replaces a declaration with a new or changed read call while someone holds a grant of `read` of it |
@@ -7819,13 +7819,14 @@ with `weighed`, and the answer's event records `via` and no `witness`.
 What a strong card brings (a program the yard runs, a link, a user or an
 endpoint the yard listens to) stands after the device is removed
 ([users.md](users.md#devices) says what that costs). The bead page asks
-more: on a hosted yard it approves a strong card under a fresh sign-in.
-Approving starts the gateway re-authentication unless the session's last
-authentication was a strong-card re-authentication by the operator inside
-the gateway's window, and the answer's event records `witness: fresh
-sign-in`. On the socket a strong card is approved as any weighty card is,
-and records `witness: terminal`. A self-hosted yard's bead page approves
-no strong card, and names the terminal command.
+more: on a hosted yard it approves every weighty run or setup card under
+a fresh sign-in. Approving starts the gateway re-authentication unless
+the session's last authentication was a weighty-card re-authentication
+by this user inside the gateway's window, and the answer's event records
+`witness: fresh sign-in`. On the socket a weighty card is approved as
+any weighty card is, and records `witness: terminal`. A self-hosted
+yard's bead page approves no weighty card, and names footplate and the
+terminal command.
 
 The word is the client's. The yard knows who calls by the operator's
 token or shell, and whoever holds either can send `weighed`, so the yard

@@ -38,6 +38,14 @@ const askRunList = `  peer add <name> <invite>
   source set <source> calls_per_hour=<n>|updates_per_hour=<n>
       one caller makes that many calls of the source in an hour, or that
       many updates among them; a lower number too, which is the operator's
+  source set <source> base=<name>|host=<host>
+      where the source's calls go: a region base the declaration names,
+      a host that fills its base_template for a server of your own, or
+      nothing after base= or host= for the declaration's own base again;
+      the card shows the address now and the one proposed whole, and
+      what happens to a standing credential (held back until it is
+      given again, or re-paired with a region base at once); only the
+      operator takes it back (weighty, outside)
   source grant <source> read|<call>|--preset <preset> --group <group>|--crew <crew member> [--as <user>]
       a group's sessions or a crew member may make the source's read
       calls, or one call by its name; both flags repeat, and it is one
@@ -161,6 +169,17 @@ const askRunList = `  peer add <name> <invite>
       a teammate goes: the removal is reported to the edge first, then
       the user, their devices and the mapping go; a plain user, whom no
       mapping names, is removed with user rm instead
+  user login <name>
+      a user is given a login of their own, or their sign-in is opened
+      again: where no group carries their login the card makes the whole
+      first-time setup (the login folder, the env file, a copy of every
+      herdr group an operator route serves, a twin route for each of
+      their beads and the yardmaster's conversation on their login), and
+      where one does it shows the env file and only opens the sign-in
+      again; the approval is carried out by the server after it, which
+      opens the sign-in's bead and launches the sign-in detached, so
+      approving never waits for the person's code (strong, code, and
+      as-user for a first login; as-user for a sign-in again)
   user device rm <user> <device>
       the device is removed: its token is refused from now on, the streams
       it held are closed and what was queued to tell it is dropped; what it
@@ -278,14 +297,27 @@ const askRunList = `  peer add <name> <invite>
       bead branches of the depot start from the base; the card shows the
       depot, the base now and the proposed one, and approving sets exactly
       that; a directory depot has no base
+  depot add <name> --clone <url> [--kind git] [--base <branch>]
+      a first git depot, cloned into the yard's depots directory when
+      approved and carried out by the server: the card shows the name,
+      the kind, the fetch whole, the base and the test command the
+      --run-test beside it carries whole or none (none is added now and
+      named later on a depot test card), and what credential the clone
+      answers with; a fetch on a push source's host answers with that
+      source's token through its helper, and one with no token standing
+      is refused; a directory depot, a re-clone and a removal stay in a
+      terminal (weighty, outside, and code where a test rides)
   route set <id> --group <group>
-      the one named rule of a depot sends its beads to the group: the card
-      names the rule's id, its scope, every filter it sets and its chain
-      with each group's condition, changes only the chain's first group,
-      and carries the filters and conditions unchanged (weighty, code);
-      a yard-wide rule is not changed where it stands on this card: set
-      it aside for one depot with route add --depot, or change it in a
-      terminal; the yardmaster files it from the operator's own mail only
+      the one named rule sends its beads along the chain the ask carries:
+      the card names the rule's id, its scope (this depot's own, or
+      yard-wide, naming every depot it serves), every filter it sets and
+      its chain whole as it stands and as it would stand, each group with
+      its condition; the whole chain rides beside the command in
+      --run-chain-line lines (E: on stdin), the first naming --group's
+      group, and without them only the first group changes, with every
+      filter and condition unchanged (weighty, code); a templated chain
+      stays in a terminal; the yardmaster files it from the operator's
+      own mail only
   route add --stage <stage> --group <group> [--depot <depot>]
       a new rule where its scope has none, with the filters it names; with
       --depot and a key a yard-wide rule takes, this depot's own set-aside

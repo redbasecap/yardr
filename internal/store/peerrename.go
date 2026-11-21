@@ -125,6 +125,7 @@ func (w *wtx) renamePeer(ctx context.Context, name, to, actor string, by *approv
 	if p, err = loadPeer(w.Tx, name); err != nil {
 		return nil, err
 	}
+	before := clonePeer(p)
 	if err := checkName("peer", to); err != nil {
 		return nil, err
 	}
@@ -165,11 +166,29 @@ func (w *wtx) renamePeer(ctx context.Context, name, to, actor string, by *approv
 			return nil, err
 		}
 	}
+	crewBefore, err := w.crewClones()
+	if err != nil {
+		return nil, err
+	}
 	had, err := renamePeerSettings(w.Tx, name, to)
 	if err != nil {
 		return nil, err
 	}
 	crew := had[MailPeers]
+	// The settings the rename rewrote name the peer in a member's config
+	// whole, which grant holds read: each such member tells here, at the
+	// rename that rewrote it (runask_stale.go).
+	for _, member := range crew {
+		var after CrewMember
+		if ok, err := get(w.Tx, bCrew, member, &after); err != nil {
+			return nil, err
+		} else if !ok {
+			continue
+		}
+		if err := w.tellCrewStale(member, crewBefore[member], &after, actor); err != nil {
+			return nil, err
+		}
+	}
 	if len(crew) > 0 {
 		data["crew"] = crew
 	}
@@ -232,6 +251,15 @@ func (w *wtx) renamePeer(ctx context.Context, name, to, actor string, by *approv
 	p.Was = append(p.Was, PeerWas{Name: name, Until: w.Bucket(bEvents).Sequence(), At: now()})
 	p.Name = to
 	if err := put(w.Tx, bPeers, to, p); err != nil {
+		return nil, err
+	}
+	// The old name is gone and the new one stands in its place: a hold of
+	// either is stale, the old one's however it read the link and the new
+	// one's only where it was written against its absence.
+	if err := w.tellPeerStale(name, before, nil, actor); err != nil {
+		return nil, err
+	}
+	if err := w.tellPeerStale(to, nil, p, actor); err != nil {
 		return nil, err
 	}
 	for _, r := range crew {

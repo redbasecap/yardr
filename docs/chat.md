@@ -410,11 +410,13 @@ value the service signs its webhooks with. Its line reads `a secret: the
 signing secret for the hook <hook> (POST /hooks/<hook>), for the source
 <source> (…)`, the yard's server writes it to `<home>/hooks/<hook>.secret`
 (mode 0600), which the hook then names, and it is refused for a source the
-yard does not declare, one whose declaration has no hook key, and a hook the
-yard has already. A hook is set up by two asks on one bead, this one first:
-give the secret here, then approve the hook's own run ask below. Before
+yard does not declare, one whose declaration has no hook key, a hook that
+serves another source, and a standing hook with a custom secret file. A new
+hook is set up by two asks on one bead, this one first: give the secret here,
+then approve the hook's own run ask below. Before
 approving the hook, giving again replaces the secret file; once the hook
-exists, changing its secret stays in a terminal. If the yard says the value is
+stands with the yard's file, a fresh secret ask rotates it the same way, and
+a file that breaks the rule (open to others, or a link) is refused, not repaired. If the yard says the value is
 written and could not be recorded, give it again. Words, a pick, and a
 decline's words are refused on such an ask and kept nowhere, so the value
 cannot land in a note by mistake: `--later` puts it aside as any ask, and
@@ -438,6 +440,7 @@ stdin, and you approve or decline it. The command is one of a fixed list:
 | `peer rm <name>` | a link removed with its intakes, identities and queued mail: the card names each with its count, and the beads it sent stay and say their link is removed while the other yard stands | only the operator, with `peer add <name> <invite>` from a fresh invite |
 | `peer set <name> --url <url>` | a peer called at a new address: the card names the peer and the address now and proposed, each whole; taking the address away (`--url ""`, never called) stays in a terminal | only the operator, with `peer set` carrying the address that stood, which the card names, or `--url ""` where it had none |
 | `source set <source> calls_per_hour=<n>`, `updates_per_hour=<n>` | how many calls of a source one caller makes in an hour, and how many of them are updates | only the operator: every setting of a source is yours |
+| `source set <source> base=<name>`, `host=<host>` (either empty for the declaration's own base) | where a source's calls go: the card shows the address now and the one proposed whole, and what happens to a standing credential (re-paired with a region base at once, or held back until it is given again). Weighty (`outside`) | only the operator, with the `base=` or `host=` that stood, which the card names |
 | `source grant <source> read\|<call>\|--preset <preset> --group <group>\|--crew <crew member> [--as <user>]` | a group's sessions or a crew member may make the source's read calls, or one call by its name; several `--group` and `--crew` are one command and one change; with `--preset <name>` the preset's calls of the pack that declares the source, named on the card with the pack; with `--as <user>` the call is made as that user, and that user alone approves it | anyone, with `yardr source revoke` by the same words, one call at a time |
 | `source add <file>` | a source the file declares, new or replacing the one of its name: the ask carries the declaration and each command file it names. A new source's card shows the whole declaration; a commands-free add runs at approval, one naming commands is carried out by the server after it. A replacement's card shows each changed key whole, old and new, each command file's diff, and who a standing grant of read now reaches; the source keeps its env_file, mint_command, region base, call limits and ignored senders, and every grant stands | only the operator: a new source with `yardr source rm <name>`; a replacement by asking the old declaration again as a card |
 | `source rm <name>` | a source removed with the grants of its calls and the counts and keys the yard kept for it; the files of its commands go too, removed by the server after the approval; the file its credential is read from stays. The card counts the subscriptions, followed threads and hooks that still name it, which stay | only the operator, with `source add <file>`: its grants, settings and counts are not brought back |
@@ -472,7 +475,8 @@ stdin, and you approve or decline it. The command is one of a fixed list:
 | `crew restart <name> [--for <user>]` | a fresh session of the crew member once the current one is idle; with `--for`, of its conversation session for the user | no one: a requested restart cannot be taken back |
 | `depot test <depot>` | a depot's test command changed, to the command the ask's `T:` line (`--run-test`) carries beside the command: the card shows the depot, the command now and the proposed one whole | only the operator, with another card carrying the old command, which the card names |
 | `depot base <depot> <base>` | the base bead branches of the depot start from | only the operator, with the base that stood, which the card names |
-| `route set <id> --group <group>` | the one named rule of a depot sends its beads to the group: the card names the rule's id, its scope (this depot's own), every filter it sets (each shown unset where unset) and its chain with each group's condition, changes only the chain's first group, and carries the filters and conditions unchanged; it is stale by that rule alone. A yard-wide rule is never changed where it stands on a card: for one depot it is set aside with `route add --depot`, and changed itself only in a terminal (weighty, `code`) | only the operator, with `route set <id>` naming the group that stood, which the card names |
+| `depot add <name> --clone <url> [--kind git] [--base <branch>]` | a first git depot cloned into the yard's depots directory when the approval is carried out, with the test command the ask's `T:` line (`--run-test`) carries whole or none: the card shows the name, the kind, the fetch, the base and the test whole, and what credential the clone answers with (a push source's token for an https fetch, none for a file or local one) | only the operator, in a terminal with `yardr depot rm <name>` |
+| `route set <id> --group <group>` | the one named rule sends its beads along the chain the ask carries: the card names the rule's id, its scope (this depot's own, or yard-wide, naming every depot it serves), every filter it sets (each shown unset where unset) and its chain whole as it stands and as it would stand, each group with its condition; the whole chain rides beside the command in `--run-chain-line` lines (`E:` on stdin), the first naming `--group`'s group, and without them only the first group changes, with every filter and condition unchanged; it is stale by that rule alone, and for a yard-wide rule by the depots it serves too. A templated chain stays in a terminal (weighty, `code`) | only the operator, with `route set <id>` naming the chain that stood, which the card names |
 | `route add --stage <stage> --group <group> [--depot <depot>]` | a new rule where its scope has none, with the filters it names; with `--depot` and a key a yard-wide rule takes, this depot's own set-aside of that rule, which the card names by its id and scope in its first lines: its key and chain carried whole with only the first group changed, filed only where no own rule for the key stands in the depot, stale where the yard-wide rule moved or an own rule for its key appeared, and saying that if the yard-wide rule's filters change later this own rule keeps its key (weighty, `code`) | only the operator, with `yardr route rm <id>` of the own rule it added at a terminal, named on the card; no card carries that deletion |
 | `flow set <name>` | a store flow's stages, carried whole beside the command (from `--run-flow <file>` or as `F:` lines), its stage order first: the card shows the stages added, removed and reordered, each kept stage's next stages as they stand and as they would be, and both flows whole. A flow a pack manages is carried the same way: the card names the pack and the depot it was imported into, says that `yardr pack apply` then keeps the yard's version, whatever the pack moves, and sets the pack's only with `--take flow/<name>`, and the approval leaves the pack's import record as it was, so the next apply reads the change as the yard's. It refuses a removal that would strand a bead, naming the beads, at the ask and again at approval, as the terminal command does (weighty, `code`, a reorder alone included) | only the operator, with the flow that stands, carried whole the same way, which the card shows; for a pack's flow also `yardr pack apply <pack> --depot <depot> --take flow/<name>`, at a terminal or as a pack apply card, which the flow card names and which sets the pack's version again |
 
@@ -491,8 +495,8 @@ file its reverse.
 
 A hook's replacement rides the `hook add` card with `--as`, `--map`,
 `--says` and `--makes` (the [`hook add` row](#questions-for-you) above);
-only a hook with a secret file of its own, or a table past 8192 bytes,
-stays typed. Anything else that is the operator's is still typed by you:
+only changing a custom secret file, or a table past 8192 bytes, stays typed.
+Anything else that is the operator's is still typed by you:
 a source's `env_file` and
 `mint_command`, taking a
 peer's identity back (`peer identity --rm`), a user's `env_file`,
@@ -513,11 +517,14 @@ card's safe shape, and a pack that yardr embeds or the packs repository
 serves at a digest
 ([users.md](users.md#the-yardmaster-for-the-operator)). A crew member's own `source add` for a name the
 yard has is refused: a replacement is proposed as a card, or typed by you.
-A source's region `base` has a door of its own where the base is the only
-change: a setup ask names it (`yardr bead ask <id> - --setup <pack> --crew
-<name> --source-base <name>`, above), and the card shows the base it will
-call. Anything else of that setting is typed, and so is a
-`host`: only the operator types one, in a terminal or on the setup card.
+A source's destination has a card of its own (`source set <source>
+base=<name>`, `host=<host>`, or either with nothing after it for the
+declaration's own base again): the card shows the address now and the
+one proposed whole, and what happens to a standing credential. A base
+alone at setup is still named there (`yardr bead ask <id> - --setup
+<pack> --crew <name> --source-base <name>`, above), and a host at setup
+is typed by the operator on that card. `env_file` and `mint_command`
+stay typed: no card shows that file or that program.
 `hook_public_url` is the exception among the addresses: it binds nothing,
 only says where the yard is reached from outside, so a crew member may
 propose it and its card shows the whole URL each hook is registered at.

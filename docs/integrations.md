@@ -854,9 +854,11 @@ keeps `base`; a declaration that no longer has a template sends the calls to
 its own base again, and a host the checks refuse sends them nowhere.
 
 Which host the credential goes to is the operator's word alone, so the host
-is typed by them in a terminal or on the setup card ([below](#a-declared-source))
-and an agent has no way to say one: `yardr source set` is refused from an
-agent's pane, and a run ask cannot propose it. A credential is given for the
+is typed by them in a terminal, on the setup card
+([below](#a-declared-source)), or on the destination card (`source set
+<source> host=<host>`, which an agent may propose and only the operator
+approves): typed at a terminal, `yardr source set` is refused from an
+agent's pane. A credential is given for the
 host the calls go to, and setting a host never carries one to it: while the
 declaration or the setting sends to another host than the one the key was
 given for, the source's calls, `yardr source check` and whatever else would
@@ -1109,16 +1111,15 @@ every name typed with a host. The asker has no flag for it: `yardr bead ask
   removed on a card too (`source rm <name>`), and its records and its
   links move to another source on one (`source move`, `link move`). Every
   other command of a source stays the operator's to type in a terminal:
-  `source set env_file=`, `mint_command=`, `base=`
-  and `host=`, and `source key` (a key is asked for with a secret ask). A
-  source's region `base` alone is changed by a setup ask instead
-  (`yardr bead ask ... --setup <pack> --source-base <name>`), and its `host`
-  is typed on that card by the operator when it asks one: the asker has no
-  flag for it, since a host decides where the credential goes. Their words
-  are a file, a path, a program or the name
-  of where the credential is sent, and a command that is approved from a
-  card has only names the yard holds, numbers and flags: `source add` is
-  the one exception, and its file's bytes are on the card.
+  `source set env_file=` and `mint_command=`, and `source key` (a key is
+  asked for with a secret ask). A source's destination moves on its own
+  card instead (`source set <source> base=<name>`, `host=<host>`, or
+  either with nothing after it), which shows the whole address each way;
+  a base alone at setup is still named there (`yardr bead ask ...
+  --setup <pack> --source-base <name>`), and a host at setup is typed on
+  that card by the operator. `env_file` and `mint_command` stay typed,
+  since no card can show that file or that program: `source add` is the
+  one exception, and its file's bytes are on the card.
 - **Its name is none of `peer`, `token`, `yardr`**, the sources yardr
   has of its own. With a `hook` key it is a hook source: a hook receives
   it (`yardr hook add acme --source acme --secret-file …`), and
@@ -2149,14 +2150,16 @@ yardr hook add linear --source linear --secret-file ~/.yardr/linear.secret --unk
 
 A file open to others is refused (`… is open to others (mode 0644); chmod
 600 it`). The file is read on every delivery, so rotating the secret is
-rewriting the file ([subscriptions.md](subscriptions.md#the-secret-file)).
+rewriting the file ([subscriptions.md](subscriptions.md#the-secret-file)):
+by hand here, or on the hook's own secret card below when it uses the
+yard-owned file.
 One hook serves every crew member. `--unknown allow` hears every
 workspace member's comment: a delivery from a sender no yard user maps is
 kept with the speaker `outside`, and one from an id a user's identity
 holds arrives named as them
 ([above](#identify)).
 
-A crew member sets the hook up without handling the secret, by two asks
+A crew member sets a new hook up without handling the secret, by two asks
 on one bead, the secret first. It asks for the signing secret
 (`yardr bead ask <id> - --secret-hook linear --source linear`, with the
 question and where the service shows the secret on stdin): the operator
@@ -2171,11 +2174,14 @@ the source's signing secret from that file, and approving it
 (`yardr bead answer <id> <ask> --approve`) makes the hook, which takes
 deliveries only with the secret standing in its file. The asks are refused
 for a source the yard does not declare, one whose declaration has no hook
-key, and a hook the yard has already; a replacement rides the `hook add`
+key, a hook that serves another source, and a standing hook with a custom
+secret file; a replacement rides the `hook add`
 card with `--as` and `--map` ([chat.md](chat.md#questions-for-you)) —
-only a secret file of its own, or a table past 8192 bytes, stays in a
-terminal. The steps by hand above stay the way to make one in a terminal,
-and to replace one with a fresh secret.
+only changing a custom secret file, or a table past 8192 bytes, stays in a
+terminal. A hook that stands with the yard's file is rotated by asking its
+secret card again; a file that breaks the rule (open to others, or a link)
+is refused, not repaired. The steps by hand above stay the way to make one in a terminal,
+and to change a custom secret file.
 
 Where the declaration names a register call with scheme `secret`
 (Telegram), there is no secret ask: the one `R: hook add <name> --source
