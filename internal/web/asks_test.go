@@ -265,8 +265,11 @@ func TestLineAskContext(t *testing.T) {
 	if n := strings.Count(text, "Move the links now?"); n != 2 {
 		t.Errorf("/line says the question %d times, want twice: the row and its card", n)
 	}
+	// An open card's row is clipped away, never display: none, so the
+	// summary's accessible name keeps the question and several open cards
+	// are told apart by a screen reader; the visible word stays Fold.
 	for _, rule := range []string{
-		".wait-ask[open] > summary .fold-closed { display: none; }",
+		".wait-ask[open] > summary .fold-closed { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }",
 		".wait-ask > summary .fold-open { display: none; color: var(--faint); }",
 	} {
 		css, err := os.ReadFile("assets/yard.css")
