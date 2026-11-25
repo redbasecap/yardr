@@ -57,6 +57,10 @@ func (c *Client) Done(ctx context.Context, id, outcome, note string, exp store.E
 func (c *Client) CloseBead(ctx context.Context, id, reason string, exp store.Expect, actor string) (*store.Bead, error) {
 	return callV[*store.Bead](c, ctx, "CloseBead", id, reason, exp, actor)
 }
+
+func (c *Client) RemoveBead(ctx context.Context, id, actor string) (*store.BeadRemoval, error) {
+	return callV[*store.BeadRemoval](c, ctx, "RemoveBead", id, actor)
+}
 func (c *Client) Reopen(ctx context.Context, id string, exp store.Expect, actor string) (*store.Bead, error) {
 	return callV[*store.Bead](c, ctx, "Reopen", id, exp, actor)
 }
@@ -157,6 +161,12 @@ func (c *Client) Notes(ctx context.Context, id string) ([]store.Note, error) {
 func (c *Client) NoteBlob(ctx context.Context, hash string) (*store.BlobRef, error) {
 	return callV[*store.BlobRef](c, ctx, "NoteBlob", hash)
 }
+func (c *Client) NoteFileBlob(ctx context.Context, seq uint64, n int) (*store.BlobRef, error) {
+	return callV[*store.BlobRef](c, ctx, "NoteFileBlob", seq, n)
+}
+func (c *Client) ReplaceNotePage(ctx context.Context, bead string, seq uint64, n int, file store.BlobFile, actor string) (*store.BlobRef, error) {
+	return callV[*store.BlobRef](c, ctx, "ReplaceNotePage", bead, seq, n, file, actor)
+}
 func (c *Client) MailBlob(ctx context.Context, viewer, hash string) (*store.BlobRef, error) {
 	return callV[*store.BlobRef](c, ctx, "MailBlob", viewer, hash)
 }
@@ -245,6 +255,10 @@ func (c *Client) DeclineAskExpected(ctx context.Context, id string, ask uint64, 
 func (c *Client) TakeBackAsk(ctx context.Context, id string, ask uint64, reason, actor string) error {
 	return c.call(ctx, "TakeBackAsk", nil, id, ask, reason, actor)
 }
+
+func (c *Client) FallThroughStageAsk(ctx context.Context, id string, at time.Time) (bool, error) {
+	return callV[bool](c, ctx, "FallThroughStageAsk", id, at)
+}
 func (c *Client) GiveSecret(ctx context.Context, id string, ask uint64, values map[string]string, actor string, weighed bool) (*store.SourceKeyed, error) {
 	return callV[*store.SourceKeyed](c, ctx, "GiveSecret", id, ask, values, actor, weighed)
 }
@@ -257,8 +271,12 @@ func (c *Client) LoginWaitReady(ctx context.Context, id string) error {
 func (c *Client) ApproveAsk(ctx context.Context, id string, ask uint64, actor string, weighed bool, values map[string]string) (*store.AskApproved, error) {
 	return callV[*store.AskApproved](c, ctx, "ApproveAsk", id, ask, actor, weighed, values)
 }
-func (c *Client) ApproveSetup(ctx context.Context, id string, ask uint64, option int, values map[string]string, account, actor string, weighed bool, host string) (*store.AskSetupApproved, error) {
-	return callV[*store.AskSetupApproved](c, ctx, "ApproveSetup", id, ask, option, values, account, actor, weighed, host)
+func (c *Client) ApproveSetup(ctx context.Context, id string, ask uint64, option int, values map[string]string, account, actor string, weighed bool, host, site string) (*store.AskSetupApproved, error) {
+	return callV[*store.AskSetupApproved](c, ctx, "ApproveSetup", id, ask, option, values, account, actor, weighed, host, site)
+}
+
+func (c *Client) PlanRun(ctx context.Context, run store.AskRun) (*store.AskRun, error) {
+	return callV[*store.AskRun](c, ctx, "PlanRun", run)
 }
 
 func (c *Client) PutDepot(ctx context.Context, r store.Depot, actor string) error {
@@ -307,6 +325,9 @@ func (c *Client) DeleteRoute(ctx context.Context, id, actor string) error {
 
 func (c *Client) PutFlow(ctx context.Context, f store.Flow, actor string) (*store.Flow, error) {
 	return callV[*store.Flow](c, ctx, "PutFlow", f, actor)
+}
+func (c *Client) PutStageFile(ctx context.Context, flow, stage, text, expectDigest, actor string) (*store.StageFile, error) {
+	return callV[*store.StageFile](c, ctx, "PutStageFile", flow, stage, text, expectDigest, actor)
 }
 func (c *Client) ListFlows(ctx context.Context) ([]store.Flow, error) {
 	return callV[[]store.Flow](c, ctx, "ListFlows")
@@ -661,6 +682,10 @@ func (c *Client) CrewPrime(ctx context.Context, name string) (*store.Prime, erro
 }
 func (c *Client) CrewPrimeFor(ctx context.Context, name, user string) (*store.Prime, error) {
 	return callV[*store.Prime](c, ctx, "CrewPrimeFor", name, user)
+}
+
+func (c *Client) Prime(ctx context.Context, crew string) (*store.PrimeInputs, error) {
+	return callV[*store.PrimeInputs](c, ctx, "Prime", crew)
 }
 func (c *Client) Remember(ctx context.Context, m store.NewMemory, actor string) (*store.Bead, error) {
 	return callV[*store.Bead](c, ctx, "Remember", m, actor)

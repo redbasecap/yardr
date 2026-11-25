@@ -116,6 +116,14 @@ preset does. Another member's kind, model and directory are not on the card:
 the yardmaster changes those on the operator's mail, or the operator types
 them. A model alone needs no card, since any member may set its own.
 
+The card holds a plan: each field it changes, as the yard's records hold it
+when the card is written and as the approval would leave it. The approval
+plans again; where the member was set since and the plan reads otherwise,
+nothing runs, and the yard takes the card back and asks again with the plan
+as it reads now, once for each approval it refuses. `yardr crew set <name>
+preset=<preset> --dry-run` (with any of the settings the card carries)
+prints that plan and the command that takes it back, and writes nothing.
+
 The value of a key named like a secret (`token`, `secret`, `password`,
 `…_key`) is not printed. A running crew member keeps its session: what it may
 do (`open_threads`, `set_state`, `peers`), `--on`, `--max-age` and
@@ -138,10 +146,10 @@ on the yardmaster, to the operator, because the onboarding ends in
 [`yardr chat`](chat.md#from-the-onboarding).
 
 A crew member has no depot, so its `prompt` is an absolute path (a relative one is
-read from its `--dir`): the yardmaster's is
-`~/.yardr/packs/<pack>/roles/yardmaster.md`, the role of the yard's default
-pack, which `yardr init` installs and points the yardmaster at; a depot's own
-`.yardr/roles/yardmaster.md` is another.
+read from its `--dir`): the yardmaster's is the yard's own
+`~/.yardr/roles/yardmaster.md`, which `yardr init` seeds from the base role
+yardr carries and points the yardmaster at, frozen as written; a depot's own
+`.yardr/roles/yardmaster.md` is another ([Role prompts](configuration.md#role-prompts)).
 
 In herdr a crew member's agent is `<yard>-<name>` (`yardr-yardmaster` for a yard
 in `~/.yardr`, `y1-yardmaster` for one in `/tmp/y1`) and its workspace is
@@ -272,8 +280,7 @@ beads, with `--for <them>` on every create so their work bills their
 subscription. It never runs the line: no triage of faults, no releasing
 or un-holding builders, no moving a bead past `new`, no landings. The
 yardmaster's role says the split for both sessions (Which session you
-are, in the starter pack's
-[yardmaster.md](../packs/starter/roles/yardmaster.md)).
+are, in the base `yardr pack show starter` prints).
 
 A person with no login of their own has no conversation session: they
 talk to the line session, whose slice holds their mail, and on the
@@ -334,7 +341,7 @@ names its person and its slice.
 - **Subscriptions:** `--on` kinds (default: `attention`, the class of kinds
   that went wrong or need a decision: `gave_up`, `session_blocked`,
   `session_stalled`, `session_harness_error`, `session_model_mismatch`,
-  `session_prompt_gave_up`, `move_refused`, `make_refused`, `unrouted`, `stranded`, `held`, …;
+  `session_prompt_gave_up`, `move_refused`, `make_refused`, `flap_held`, `unrouted`, `stranded`, `held`, …;
   [subscriptions.md](subscriptions.md#the-class-attention) lists them), webhook deliveries
   (`yardr subscribe <name> linear --scope involved`), and yardr's own bead
   events (`yardr subscribe <name> yardr --done`, `yardr bead watch <id>`).
@@ -578,6 +585,16 @@ at all.
   stays unread, and the nudge is typed on the first pass that finds the
   pane without the error. See "A crew member's harness" in
   [groups.md](groups.md).
+- A crew member may name a fallback model of its own kind beside its
+  model (`yardr crew set <name> fallback_model=<model>`; a model of
+  another kind is refused when it is set). When it stops on that
+  model's own usage window while the windows every model shares are
+  still open, the daemon restarts it on the fallback at once — from
+  its last handoff and its unread inbox, with no handoff waited for
+  from the stopped session — mails the operator, and restarts it back
+  on its own model when that window resets. With no fallback named it
+  waits for the reset as before, and the operator's one mail names the
+  setting that would have rescued it.
 - The one text the daemon sends is its own, alone in the input because its
   Enter was not taken: the last nudge (for two of the daemon's intervals after it was
   typed, a minute by default: the same words there later are taken as a
@@ -779,8 +796,10 @@ yardr crew show yardmaster     # env_file …/yardmaster.env (LINEAR_API_KEY)
   `env_file` path is the daemon user's home; a variable is not expanded
   there, so a yard with its own `YARDR_HOME` writes the path out.
 - Each entry joins the pane environment next to `YARDR_CREW`,
-  `YARDR_ACTOR` and `YARDR_HOME`. A key yardr sets itself is ignored, so a
-  credentials file cannot change who the agent is.
+  `YARDR_ACTOR`, `YARDR_HOME` and `GIT_EDITOR=true` (no editor opens in a
+  pane, so a `git rebase --continue` takes the message git prepared). A key
+  yardr sets itself is ignored, so a credentials file cannot change who the
+  agent is.
 - The environment reaches herdr over its API socket, in the request that
   opens the pane, never as arguments of a `herdr` command: a command line
   shows in `ps` to every user of the machine, the socket only to its owner.

@@ -103,194 +103,9 @@ func DefaultLimit(runner string) int {
 	return 1
 }
 
-// PutGroup adds or replaces a group, and logs group_set. The cmd, dir,
-// env_file, kind, args, prompt and worktrees settings, and a runner change
-// to or from exec, are the operator's alone (checkGroupDefine); the rest is
-// anyone's. From a pane the write is recorded as the pane's actor (paneAuthor).
-func (s *Store) PutGroup(ctx context.Context, g Group, actor string) error {
-	return s.write(func(w *wtx) error {
-		// Batch reruns this closure, so it writes a copy.
-		g := g
-		resolved, err := paneAuthor(w.Tx, callerOf(ctx), actor)
-		if err != nil {
-			return err
-		}
-		actor = resolved
-		return w.delegatedPutGroup(ctx, &g, actor)
-	})
-}
-
-// putGroup is PutGroup in a transaction: g is stored as it is given but for
-// its subscriptions, which are the stored group's. limitExplicit says the
-// caller named this limit: SetGroup with a limit in its edit, which 0
-// pauses through. A limit of 0 that is not named is no limit named: the
-// default of the group's runner (DefaultLimit), except a replace never
-// unpauses, so a paused group put back without a limit stays paused. A
-// negative limit is refused. Its config is held to ConfigKeys here, whoever
-// writes it (the CLI, the group form, a pack); a key the stored group has
-// already, with the same value, is kept unasked.
-func putGroup(ctx context.Context, w *wtx, g *Group, actor string, limitExplicit bool) error {
-	if g.Config == nil {
-		g.Config = map[string]any{}
-	}
-	if g.Limit < 0 {
-		return fmt.Errorf("group %s: a limit is 0 or more", g.Name)
-	}
-	g.Members = dedupeOrdered(g.Members)
-	if len(g.Members) > 0 && g.Runner != "manual" {
-		return fmt.Errorf("group %s: members are only for manual groups (this one is %s)", g.Name, g.Runner)
-	}
-	var old Group
-	replaced, err := get(w.Tx, bGroups, g.Name, &old)
-	if err != nil {
-		return err
-	}
-	if err := checkGroupDefine(ctx, w, old, *g, actor); err != nil {
-		return err
-	}
-	if g.Limit == 0 && !limitExplicit && (!replaced || old.Limit != 0) {
-		// 0 is no limit named: the default of the runner, for a group
-		// that is new and for a replaced one, as before. A paused group
-		// put back without a limit is the exception: the replace keeps
-		// the pause instead of unpausing it.
-		g.Limit = DefaultLimit(g.Runner)
-	}
-	if g.Name == RouteWait && !replaced {
-		return fmt.Errorf("group wait: wait ends a route (--else wait), so no group takes the name")
-	}
-	g.Subscriptions = old.Subscriptions
-	kept := old.Config
-	if old.Runner != g.Runner {
-		kept = nil
-	}
-	if ps := configProblems(GroupConfig, g.Name, g.Runner, g.Config, kept); len(ps) > 0 {
-		return ps[0]
-	}
-	if len(g.Subscriptions) > 0 && g.Runner != "manual" {
-		return fmt.Errorf("group %s has subscriptions, which only manual groups may: unsubscribe it first", g.Name)
-	}
-	if err := checkPeerGroup(w.Tx, g); err != nil {
-		return err
-	}
-	if err := checkLoginFor(w.Tx, g); err != nil {
-		return err
-	}
-	if g.Runner != "herdr" {
-		if err := checkQuotaRoutes(w.Tx, g); err != nil {
-			return err
-		}
-	}
-	if err := put(w.Tx, bGroups, g.Name, *g); err != nil {
-		return err
-	}
-	data := map[string]any{"name": g.Name, "runner": g.Runner, "limit": g.Limit}
-	if len(g.Members) > 0 {
-		data["members"] = g.Members
-	}
-	return w.event("", "group_set", actor, data)
-}
-
-func (s *Store) GetGroup(ctx context.Context, name string) (*Group, error) {
-	g := new(Group)
-	err := s.read(func(tx *bolt.Tx) error {
-		ok, err := get(tx, bGroups, name, g)
-		if err == nil && !ok {
-			err = fmt.Errorf("group %s: %w", name, ErrNotFound)
-		}
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return g, nil
-}
-
-// DeleteGroup removes the group and the routes that send work to it, those
-// that name it after another group too: what is left of such a route would
-// say something its operator did not write. Its
-// live sessions end as released and their beads go back to routing in the
-// same transaction: a bead owned by a deleted group would otherwise sit in
-// its stage until released by hand, since no route can claim it. The
-// dispatcher's teardown stops the runner resources. It reports how many
-// beads it released. It logs one group_removed, which names the routes that
-// went with the group, as depot_removed does; a group that was not there
-// logs nothing. Removing a group is the operator's or the yardmaster's to
-// do (operatorOrYardmaster).
-func (s *Store) DeleteGroup(ctx context.Context, name, actor string) (int, error) {
-	released := 0
-	err := s.write(func(w *wtx) error {
-		resolved, err := paneAuthor(w.Tx, callerOf(ctx), actor)
-		if err != nil {
-			return err
-		}
-		actor = resolved
-		if err := w.packRemoveGroup(ctx, name, actor); err != nil {
-			return err
-		}
-		// Batch reruns this closure when another call in the batch fails, so
-		// the count starts over with each attempt.
-		_, released, err = w.deleteGroup(name, actor)
-		return err
-	})
-	return released, err
-}
-
-// deleteGroup is DeleteGroup inside the transaction, so that removing a user
-// takes the groups that carry their login in the write that removes them
-// (deleteUser). The caller has checked who may. It answers the ids of the
-// routes removed with the group and how many beads it released; a group that
-// is not there is nothing removed and logs nothing.
-func (w *wtx) deleteGroup(name, actor string) (routes []string, released int, err error) {
-	if w.Bucket(bGroups).Get([]byte(name)) == nil {
-		return nil, 0, nil
-	}
-	drop := []string{}
-	if err := each(w.Tx, bRoutes, "", func(k []byte, r *Route) error {
-		if r.Names(name) {
-			drop = append(drop, string(k))
-		}
-		return nil
-	}); err != nil {
-		return nil, 0, err
-	}
-	for _, k := range drop {
-		if err := w.Bucket(bRoutes).Delete([]byte(k)); err != nil {
-			return nil, 0, err
-		}
-	}
-	live, err := w.store.liveSessions(w.Tx, name)
-	if err != nil {
-		return nil, 0, err
-	}
-	reason := "group " + name + " deleted"
-	for _, sess := range live {
-		owned := false
-		if _, err := w.changeBead(sess.Bead, actor, func(w *wtx, b *beadRow) (string, map[string]any, error) {
-			if b.Session == nil || *b.Session != sess.ID {
-				return "", nil, nil
-			}
-			owned = true
-			return "released", map[string]any{"reason": reason}, w.endSession(b, "released")
-		}); err != nil {
-			return nil, 0, err
-		}
-		if owned {
-			released++
-			continue
-		}
-		// The bead moved on without this session; end it so it is not live.
-		t := now()
-		sess.State, sess.Error, sess.EndedAt = "released", &reason, &t
-		if err := putSession(w.Tx, &sess); err != nil {
-			return nil, 0, err
-		}
-	}
-	if err := w.Bucket(bGroups).Delete([]byte(name)); err != nil {
-		return nil, 0, err
-	}
-	return drop, released, w.event("", "group_removed", actor, map[string]any{
-		"name": name, "routes": drop, "released": released})
-}
+// The writes of a group (PutGroup, putGroup, GetGroup, DeleteGroup and
+// deleteGroup) are in groupedit.go; what stands here of a group is its
+// record, who it is and the routes that name it.
 
 // Route sends open, unblocked beads in Stage to Group. Nil fields match any,
 // but for the originator: a route without one takes only the operator's
@@ -660,12 +475,14 @@ type Quota struct {
 	Unknown string
 	// LastKnown, beside Unknown, are the windows the provider last said:
 	// the whole of a young report, or else only the windows used up
-	// that reset after the moment of the choice. They are read as the
-	// same windows fresh would be, a comparison's duration included:
-	// they fail the comparisons they answer, or are held for their
-	// reset, the reason or the note saying they were last known, and
-	// every other comparison is as unknown as Unknown says.
+	// that reset after the moment of the choice, read as fresh ones
+	// would be: they answer as fresh ones do, and a comparison they
+	// do not answer is unknown as Unknown says (judge).
 	LastKnown []QuotaWindow
+	// Pending says the answer is on its way (no fresh answer yet, its
+	// refresh running): a comparison it cannot answer holds for it in
+	// the caller, where a remembered failure fails it at once (judge).
+	Pending bool
 }
 
 // QuotaWindow is one window of a usage limit as a condition reads it.
@@ -688,11 +505,10 @@ type RouteChoice struct {
 	Group string `json:"group,omitempty"`
 	// Passed are the groups before it whose condition failed, in order.
 	Passed []PassedGroup `json:"passed,omitempty"`
-	// Unknown says, of Group, what of its condition could not be evaluated
-	// and why: such a condition holds, so a limits command that fails takes
-	// the gate away and stops nothing. A group with no condition has the
-	// one Choose gives it, and is said of in the same words, but for a
-	// provider that reports no window: it knows of no limit.
+	// Unknown says, of Group, what could not be shown and why, where the
+	// group still takes the bead: a group with no condition, or one whose
+	// answer is still on its way (Quota.Pending). A comparison that was
+	// answered and cannot be shown fails instead (Passed).
 	Unknown string `json:"limits_unknown,omitempty"`
 	// Held says, of Group, which windows were past the number its condition
 	// asks for and held all the same, because they reset within the duration
@@ -812,23 +628,28 @@ func (r Route) ChooseAt(now time.Time, quota func(group, source string) Quota, m
 	return c
 }
 
-// judge compares the windows with limits: the comparisons that failed, in
-// words, those that could not be made, the windows that were past their
-// number and held because they reset within the comparison's duration
-// (held, in words), and the earliest reset among the windows that failed.
-// now is what a reset is measured from. Each comparison reads the quota of
-// the source it names, "" being the group's provider; a source nothing is
-// known of is said once, however many comparisons name it. model is the
-// model the bead would start with in the group judged, "" where none is
-// known: the comparison no route wrote reads a per-model window against it.
+// judge compares the windows with limits: the comparisons that failed,
+// those that could not be shown and hold all the same, the windows held
+// for their reset, and the earliest reset among the windows that failed.
+// now is what a reset is measured from; a source nothing is known of is
+// said once. model is the bead's model in the group, "" where none is.
 func judge(now time.Time, limits []QuotaLimit, quota func(source string) Quota, model string) (failed, unknown, held []string, resets *time.Time) {
 	said := map[string]bool{}
+	// cannotShown files a comparison that cannot be shown: a failure,
+	// or unknown where the group holds all the same (no condition, or
+	// an answer still on its way, Quota.Pending).
+	cannotShown := func(l QuotaLimit, q Quota, note string) {
+		if l.Implicit || q.Pending {
+			unknown = append(unknown, note)
+		} else {
+			failed = append(failed, note)
+		}
+	}
 	for _, l := range limits {
 		q := quota(l.Source)
 		// With nothing known, the windows last known (Quota.LastKnown) are
-		// all there is to read. They are read as a fresh window is, so
-		// they fail the comparisons they answer or are held for their reset,
-		// and a comparison they do not answer is unknown.
+		// all there is to read, as a fresh window is: they answer as one
+		// does, and a comparison they do not answer cannot be shown.
 		windows, lastKnown := q.Windows, q.Unknown != ""
 		if lastKnown {
 			windows = q.LastKnown
@@ -842,28 +663,24 @@ func judge(now time.Time, limits []QuotaLimit, quota func(source string) Quota, 
 			if l.Label != "" && w.Label != l.Label {
 				continue
 			}
-			// The comparison no route wrote reads the windows every model of
-			// the provider draws from, and the one the bead would start with
-			// in this group draws from alone: a session started into either
-			// stops on the limit at once. A window for another model, or for
-			// one model where none is known, would hold the group for a limit
-			// it never reaches, so it is left out, as every per-model window
-			// was before the choice knew the model. A condition that names
+			// The comparison no route wrote reads the windows every model
+			// draws from, and the bead's own model's alone: a session
+			// started into either stops on the limit at once. A window for
+			// another model, or for one where none is known, is left out,
+			// as before the choice knew the model. A condition that names
 			// the window, or every window, asked for it.
 			if l.Implicit && w.Model != "" && w.Model != model {
 				continue
 			}
 			seen = true
 			if w.UsedPercent == nil {
-				unknown = append(unknown, fmt.Sprintf("%s report does not say how far the %s window is used", whose, w.Label))
+				cannotShown(l, q, fmt.Sprintf("%s report does not say how far the %s window is used", whose, w.Label))
 				continue
 			}
 			under, want := l.Under, percent(l.Under)
 			if l.Target {
-				// No second rule: a window with no target reads as the
-				// comparisons above that cannot be made.
 				if w.TargetPercent == nil {
-					unknown = append(unknown, fmt.Sprintf("%s report does not say the target of the %s window", whose, w.Label))
+					cannotShown(l, q, fmt.Sprintf("%s report does not say the target of the %s window", whose, w.Label))
 					continue
 				}
 				under = *w.TargetPercent + l.Margin
@@ -900,13 +717,11 @@ func judge(now time.Time, limits []QuotaLimit, quota func(source string) Quota, 
 		case lastKnown:
 			if !said[l.Source] {
 				said[l.Source] = true
-				unknown = append(unknown, q.Unknown)
+				cannotShown(l, q, q.Unknown)
 			}
-		case l.Implicit:
-		case l.Label == "":
-			unknown = append(unknown, whose+" report has no windows")
 		default:
-			unknown = append(unknown, fmt.Sprintf("%s report has no window labelled %s", whose, l.Label))
+			// An answered report with no such window knows of no such
+			// limit: the comparison holds, with nothing to say of it.
 		}
 	}
 	return failed, unknown, held, resets

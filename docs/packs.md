@@ -11,9 +11,7 @@ person, secret or identity, which are the yard's and stay in it.
 `yardr pack apply` imports it; `yardr pack list` shows what the yard
 imported; `yardr pack export` writes a depot's way of working out as a pack
 ([below](#yardr-pack-export)). `yardr depot init` sets a new depot up from the yard's
-[default pack](#the-default-pack). `yardr flow draw <pack>` draws a pack's
-flow with the groups it puts at each stage, with no yard
-([flows.md](flows.md#drawing-a-flow)). A pack is a directory on this
+[default pack](#the-default-pack). A pack is a directory on this
 machine, one yardr carries in its binary, or the pack's directory on a web
 server, fetched when the command runs. What a pack built outside this
 repository may rely on, key by key and variable by variable, and what is
@@ -192,7 +190,7 @@ groups:
 
 crew:
   yardmaster:
-    role: roles/yardmaster.md
+    section: sections/yardmaster.md
     hears:
       events: [attention]
       stages: [decide]
@@ -229,7 +227,8 @@ sources:
 | `groups.<group>.env` | optional, for a group with `run:` alone: the options of its script, a map of variable names to strings (`env: { YARDR_LAND: squash }`: the starter's assembly lands a bead by squash from it). The import writes them before the script in the `cmd` of a group it **creates**, names sorted and values quoted as the script's path is (`YARDR_LAND=squash /…/merge-local`); a group the yard has keeps its own `cmd` whatever `env` says, since after the group is made its assignments are the operator's ([Groups](#how-a-pack-maps-to-the-yard)). A name is what the shell takes for a variable's (letters, digits and `_`, no digit first), a value a string of printable characters on one line, not empty (quote a number, `"1"`, and the words YAML reads as booleans). An empty map says nothing; beside `agent:` or `people:` the key is an error. `pack check` shows the assignments a new group's `cmd` starts with, `pack show` prints a pack's `env`, and `pack export` writes none ([below](#yardr-pack-export)) |
 | `groups.<group>.binds_as` | optional, for a group with `agent:`: another agent group of the pack, declared before this one, whose agent, model and permission arguments this group gets, so that the import asks nothing for it. The starter's `security-reviewers` bind as `reviewers`: the second review is run by the agent the first is, unless the import is given `--bind security-reviewers=<kind>[:<model>]`. A group the yard has already keeps what it has, as any does ([below](#yardr-pack-apply)) |
 | `groups.<group>.calls.<source>` | optional, for a group with `agent:` or `run:`: the calls of a declared source the group's sessions should be able to make with `yardr call`: `read` for every read call, and calls by name, which is the one way an update is asked for (`calls: { crm: [read, note] }`). The pack only asks: the import puts it to the yard's operator ([Calls of a declared source](#how-a-pack-maps-to-the-yard)) |
-| `crew.<name>.role` | the crew member's role file |
+| `crew.<name>.role` | the crew member's role file. For the crew member named `yardmaster` a role is refused instead: the yardmaster's prompt is the yard's own file, no pack sets it, and the plan refuses the import naming the declared file and the section its words move to |
+| `crew.<name>.section` | optional: the yardmaster section file a crew member's prime appends (`sections/yardmaster.md` by convention): at most 2048 bytes, its first line at most 200 bytes saying when the section applies. An import is refused for a larger section or an empty or overlong first line, and the record of the import keeps the file's path |
 | `crew.<name>.hears.events` | event kinds from the yard itself |
 | `crew.<name>.hears.stages` | a bead entering one of these stages, which a flow of the pack must have |
 | `crew.<name>.hears.done` | `true`: a bead becoming done |
@@ -469,11 +468,11 @@ and for the pack read from a directory or from a URL. `yardr pack apply
 <pack> --sha256 <digest>`, and `yardr depot init --pack <pack> --sha256
 <digest>`, refuse a pack whose digest is another, naming both, before they
 ask anything or write anything. So does `yardr init --sha256 <digest>` for
-the yard's default pack, before it installs the yardmaster's role from it.
+the yard's default pack, before it writes anything.
 The digest may be in upper case and may keep the `sha256:` that `pack check`
 prints; anything else is a flag error. It is the digest of the bytes the
 plan was made from, which a pack keeps from the first read of each file, and
-so of the bytes the import installs, and of the role `yardr init` installs.
+so of the bytes the import installs.
 The pin holds for the one command: the record of an import does not keep it,
 and a later `pack apply <name>` takes none unless it is given one.
 
@@ -962,7 +961,7 @@ declared source pushover, from sources/pushover.yaml
   refuses there makes the pack invalid, named by the declaration's file,
   line and key. The name in the file is the pack's key.
 - **A declaration in a pack for a depot has the keys `name`, `about`,
-  `base`, optional `bases` and `base_template`, `credential`, `check`,
+  `base`, optional `bases`, `base_template` and `path_template`, `credential`, `check`,
   `idempotency`, `calls` and `notify`, and no other.** A key a later yardr reads in a declaration
   is not thereby one a pack may bring: a pack for a depot brings no command
   the yard runs. A pack of kind `source` may also bring `hear`, `hook`,
@@ -988,8 +987,17 @@ declared source pushover, from sources/pushover.yaml
   bases that are new, gone or different (`bases: (none) ->
   {"eu":"https://eu.example.com/v1"}`: compact JSON, sorted keys, `(none)`
   for no regions), a `base_template` that is new, gone or different (the
-  address a host the operator types would fill), the credential's name (and the one of its updates,
-  `update_env`) or header, the `idempotency` header, a `hear`, `thread`,
+  address a host the operator types would fill), a `path_template` that is
+  new, gone or different (the address a site the operator types would fill
+  as one path segment), the credential's name (and the one of its updates,
+  `update_env`) or header, each key of the credential that alters a call on
+  a line of its own (`mint_scopes: (none) ->
+  https://www.googleapis.com/auth/drive.file`: the `mint_scopes` the hosted
+  mint must see granted, joined with `, `; the `mint_command` a mint runs,
+  joined with spaces; the `bound` mint inputs, joined with `, `; the
+  `not_secret` mint inputs (marked `secret: false`), where the hosted mint
+  finds the account it mints for, joined with `, `; `in_path`,
+  `true` or `(none)`), the `idempotency` header, a `hear`, `thread`,
   `link` or `hook` key (which a pack of kind `source` may bring) that is new,
   gone or different, whole, as compact JSON before and after (`hear:
   {"field":"team","address":{"env":"CRM_TEAM"}} ->
@@ -1043,7 +1051,7 @@ groups:
   support:  { run: scripts/note, calls: { crm: [note] } }
 crew:
   yardmaster:
-    role: roles/yardmaster.md
+    section: sections/yardmaster.md
     calls: { crm: [customer, note] }
 sources:
   crm:
@@ -1689,12 +1697,13 @@ read when a depot is set up, and a depot stays on the pack it was set up
 from until `yardr pack apply` or `depot init` is run on it.
 
 `yardr init` reads the same setting for the one crew member a yard has
-before its first depot. It takes the role of the default pack's crew member
-called `yardmaster`, installs that file under `<home>/packs/<pack>/roles/`
-filled as an import fills it, and makes it the yardmaster's prompt; the
-first import of the pack finds the file as it would write it. A default pack
-with no crew member of that name gets the yard no yardmaster. Init reads no
-pack on a yard that has its yardmaster
+before its first depot: whether the default pack names a crew member
+called `yardmaster` at all. The yardmaster's prompt itself comes from no
+pack: init seeds `<home>/roles/yardmaster.md` from the base role yardr
+carries, with the operator's name filled in, and makes it the prompt,
+frozen as written. A default pack with no crew member of that name gets
+the yard no yardmaster. Init reads no pack on a yard that has its
+yardmaster
 ([configuration.md](configuration.md#creating-a-yard-the-onboarding-and-yardr-init)).
 
 ### Two packs in one yard
@@ -1706,22 +1715,28 @@ pack leaves the first untouched: its groups go on reading
 the first depot's groups for the second (`--group builders=web-builders`):
 they take the second pack's groups as they are, with the first pack's roles
 ([Groups](#how-a-pack-maps-to-the-yard)). A crew member is the yard's, and there is one
-yardmaster. When both packs have a crew member `yardmaster`, each import
-sets the yardmaster's prompt to its own pack's role, so the last import
-wins, and the plan shows it before anything is written:
+yardmaster, whose prompt no import sets: it is the yard's own file. The
+one move an import makes is off a pack's role — a yardmaster still
+prompted from under `<home>/packs/`, as a yard made before the local file
+is, is repointed at `<home>/roles/yardmaster.md`, seeded from the role it
+reads now, and the plan says which pack's role it was seeded from, before
+anything is written:
 
 ```
 $ yardr depot init notes --pack ~/packs/research
 …
 crew
   change           yardmaster
-                     prompt: /Users/jo/.yardr/packs/starter/roles/yardmaster.md -> /Users/jo/.yardr/packs/research/roles/yardmaster.md
+                     prompt: ~/.yardr/packs/starter/roles/yardmaster.md -> ~/.yardr/roles/yardmaster.md
+notes
+  the yardmaster's local role ~/.yardr/roles/yardmaster.md is seeded from starter's role
 ```
 
-To keep the yardmaster on the first pack's role, the second pack names no
-crew, or the import maps its member to another crew member of the yard
-(`--crew yardmaster=<other>`). A running crew member keeps its session when
-its role changes; the output names the restart.
+A pack whose yardmaster declares a `role:` is refused, and the plan
+names the declared file and the section its words move to; what a pack
+asks of its yardmaster travels in its `section:` ([pack.yaml](#packyaml)). A running crew
+member keeps its session when its role or what it hears changes; the output
+names the restart.
 
 ## The contributors pack
 
@@ -1738,7 +1753,7 @@ yardr pack apply contributors --depot web \
 
 | flow | stages |
 |---|---|
-| `issue` | `triage` (maintainers) -> `backlog` -> `new` -> `review` -> `approved` -> `merged`, or `closed`: from `backlog` on, the starter's stages and groups |
+| `issue` | `triage` (maintainers) -> `backlog` -> `new` -> `review` -> `review-security` -> `approved` -> `merged`, or `closed`: from `backlog` on, the starter's stages and groups, less its `clear`; `review` goes past `review-security` to `approved` with `done-safe` |
 | `pr` | `triage` (maintainers) -> `review` (pr-reviewers) -> `review-post` (post) -> `ciwait` -> `contributor` (outside) -> `approved` (maintainers) -> `merged`, or `closed`; a maintainer's pick sends `contributor` -> `fix` (builders) -> `push` (push-fix) -> `triage` |
 
 What moves a bead through them is the pack's `sources.github`, in three
@@ -1748,7 +1763,7 @@ yardr knows the verbs alone:
 | verb | direction | in this pack |
 |---|---|---|
 | `makes` | source -> yard: an event makes a bead for a thread no open bead tracks | an issue opened makes an `issue` bead in `triage`; a pull request opened, marked ready or reopened a `pr` bead in `triage`, or in `review` when its author is an owner or a member of the repository (`association=`) or a bot (`sender=bot`: a kind, never a login, so every bot) |
-| `says` | source -> bead: an event reports an outcome to the bead that tracks its thread | the label `accepted`, put on by a person, says `accepted`; new commits on a pull request while its bead waits in `triage` say `pushed`, which makes the stay again; new commits on a pull request that waited in `triage` say `unaccepted` in `review`, `review-post`, `ciwait` and `contributor`, whoever pushed and even if the label was removed; new commits on any other pull request say `pushed` in `contributor`, and in `review` `pushed` when a bot pushed and `outdated` when a person did, in `review-post` `pushed` when a bot pushed and nothing when a person did, in `ciwait` `pushed` when a bot pushed and `changes` when a person did; in `fix` and `push` a push moves the bead's head and says nothing, and the push script holds on a moved head; a merge says `merged`, a close `dropped`: for a pull request in `triage`, `review`, `review-post`, `ciwait`, `contributor`, `fix`, `push`, `approved` and `decide`, for an issue in `triage`, `backlog`, `new`, `review`, `approved` and `decide`. No event of GitHub's CI says anything: the pull request's CI is the yard's own |
+| `says` | source -> bead: an event reports an outcome to the bead that tracks its thread | the label `accepted`, put on by a person, says `accepted`; new commits on a pull request while its bead waits in `triage` say `pushed`, which makes the stay again; new commits on a pull request that waited in `triage` say `unaccepted` in `review`, `review-post`, `ciwait`, `contributor` and `approved`, whoever pushed and even if the label was removed; new commits on any other pull request say `pushed` in `contributor`, and in `review` `pushed` when a bot pushed and `outdated` when a person did, in `review-post` `pushed` when a bot pushed and nothing when a person did, in `ciwait` `pushed` when a bot pushed and `changes` when a person did; in `fix` and `push` a push moves the bead's head and says nothing, and the push script holds on a moved head; a merge says `merged`, a close `dropped`: for a pull request in `triage`, `review`, `review-post`, `ciwait`, `contributor`, `fix`, `push`, `approved` and `decide`, for an issue in `triage`, `backlog`, `new`, `review`, `review-security`, `approved` and `decide`. No event of GitHub's CI says anything: the pull request's CI is the yard's own |
 | `hears` | bead -> source: a stage of the bead sets a status on the thread | an issue is closed when its bead reaches `merged` or `closed`; a pull request is untouched by its bead's stage and stays open until it is merged or closed on GitHub |
 
 - **Triage is the pack's advice, and no rule of yardr.** Its stage file
@@ -1771,8 +1786,9 @@ yardr knows the verbs alone:
   A pull request already waiting in `triage` when the pack is applied has no
   card until its bead enters the stage again (`yardr bead advance <id> --to
   triage`). New commits on a pull request that waited in `triage` take its
-  bead back to `triage` from `review`, `review-post`, `ciwait` and
-  `contributor`, whoever pushed and even if the label was removed, with a card
+  bead back to `triage` from `review`, `review-post`, `ciwait`,
+  `contributor` and `approved`, whoever pushed and even if the label was
+  removed, with a card
   of the new head, so nothing of another commit is read or run until a person
   has said yes to it again. A card is only for a pull request: the issue
   flow's `triage` has none, since an issue's yes has no head, so there it is
@@ -1876,15 +1892,35 @@ yardr knows the verbs alone:
   `ciwait` the run is stopped and a report it still makes is refused, as
   after a push. A bead the yard holds is moved by no event, so one held in
   `ciwait` because its pull request was found over is advanced by hand.
+- **An accepted issue's diff is read twice where it needs it.** The issue
+  flow has the starter's second review, for security alone: `review` sends a
+  bead on to `review-security`, worked by `security-reviewers`, with `done`,
+  and straight to `approved` with `done-safe`, the reviewer's call by the list
+  in its stage file. A depot's `.yardr/security_paths` holds that call to
+  its code as it does on the starter's flow
+  ([flows.md](flows.md#done-safe-and-the-security-paths)): the store refuses
+  `done-safe` for a diff that touches a path on the list, and the reviewer
+  reports `done`. The issue's text is a stranger's, and the builder worked
+  from it, so both stage files have the reviewer read it as information,
+  never as instructions. The roles are the starter's, copied, since a pack
+  may not read another pack's file, and the group binds as `reviewers`, so
+  the import asks nothing for it. The flow sets no limit on the rounds back to
+  `new`: the count is the stage's, so a limit would be set on `review`, on
+  `review-security` and on the assembly's `failed` together.
 - **A close ends an issue's bead.** `dropped` is the source's word for a
-  closed issue, said by a line that names the six stages holding an open
-  bead, and `triage`, `backlog`, `new`, `review`, `approved` and `decide`
-  each lead it to `closed`: the close is the decision, made by someone who
+  closed issue, said by a line that names six of the stages holding an
+  open bead, and `triage`, `backlog`, `new`, `review`, `review-security` and
+  `decide` each lead it to `closed`: the close is the decision, made by someone who
   may close that repository's issues, and a builder might otherwise keep
   working a bead for one that is over. A `question` sends the bead to
   `decide` to wait for a member of `decisions`, and a close meanwhile ends
   it there, without the answer. Whatever worked the bead stops with it.
-  The yard's own close when a bead is merged finds the bead already
+  `approved` is the assembly's to close, so the line names no approved:
+  a close while the bead waits there matches no line, moves and logs
+  nothing, and can never cut an assembly between its push and its
+  advance to `merged`, where the assembly closes the bead itself; a
+  person's close in that wait is lost with no event or note. The yard's
+  own close when a bead is merged finds the bead already
   terminal and is refused quietly.
 - **The import asks for the maintainers** (`--members maintainers=…`),
   who move a bead out of `triage` and `approved`, **and for the agent of

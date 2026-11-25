@@ -139,13 +139,13 @@ func (w *wtx) staleSource(seq uint64, name string, was, now AskRun) error {
 		return nil
 	}
 	added := lastEvent(w.Tx, "source_added", naming("source", name))
-	settings := []string{SourceEnvFile, SourceMintCommand, SourceBase, SourceHost}
+	settings := []string{SourceEnvFile, SourceMintCommand, SourceBase, SourceHost, SourceSite}
 	set := lastEvent(w.Tx, "source_set", func(e Event) bool {
 		return e.Data["source"] == name && slices.ContainsFunc(settings, func(k string) bool { _, ok := e.Data[k]; return ok })
 	})
 	switch {
 	case set != nil && (added == nil || set.Seq > added.Seq):
-		for _, k := range []string{SourceBase, SourceHost} {
+		for _, k := range []string{SourceBase, SourceHost, SourceSite} {
 			if _, ok := set.Data[k]; ok {
 				return fmt.Errorf("ask %d was written when the source %s used another %s: its %s was set since%s. %s", seq, name, k, k, since(set), nothingRan)
 			}
@@ -236,10 +236,10 @@ func andList(words []string) string {
 }
 
 // parseSourceLimit reads the words of source set <source> <setting>=<n>.
-// Where the credential comes from, and where it is sent, is read too,
-// and refused as the operator's alone by the check, not here: a path, a
-// program and a base are no words of a command that is approved from a
-// card.
+// Where the credential comes from (env_file, mint_command) is read too,
+// and refused as the operator's alone by the check, not here: a file and
+// a program are no words of a command that is approved from a card.
+// Destination settings (base, host) are claimed first by parseSourceDest.
 func parseSourceLimit(rest []string) ([]string, error) {
 	const use = "yardr source set <source> calls_per_hour=<n> or updates_per_hour=<n>"
 	args, _, err := runWords(use, "source set", "the operator's", rest, nil)
@@ -254,12 +254,12 @@ func parseSourceLimit(rest []string) ([]string, error) {
 	switch {
 	case !ok:
 		return nil, fmt.Errorf("--run takes %s: %q is no setting", use, args[1])
-	case key != SourceCallsPerHour && key != SourceUpdatesPerHour && key != SourceEnvFile && key != SourceMintCommand && key != SourceBase && key != SourceHost:
+	case key != SourceCallsPerHour && key != SourceUpdatesPerHour && key != SourceEnvFile && key != SourceMintCommand:
 		return nil, fmt.Errorf("source %s: %s is no setting of a source (it has: %s)", name, key, strings.Join(SourceSettings, ", "))
 	case value == "":
 		return nil, fmt.Errorf("--run takes %s, and source set with %s= and nothing after it is the operator's to type in a terminal", use, key)
 	}
-	if key == SourceEnvFile || key == SourceMintCommand || key == SourceBase || key == SourceHost {
+	if key == SourceEnvFile || key == SourceMintCommand {
 		return []string{name, args[1]}, nil
 	}
 	n, err := sourceSetting(name, key, value)
@@ -270,8 +270,8 @@ func parseSourceLimit(rest []string) ([]string, error) {
 }
 
 // checkSourceLimit is the source set's own check as the asker: the two
-// limits may be proposed, and where the credential comes from, and where
-// it is sent, is the operator's alone.
+// limits may be proposed, and where the credential comes from stays the
+// operator's alone.
 func checkSourceLimit(ctx context.Context, w *wtx, argv []string, actor string) error {
 	name, key, _ := sourceLimitOf(argv)
 	_, err := w.sourceSetCheck(ctx, name, key, actor)
@@ -575,7 +575,7 @@ func grantCallMay(d *source.Declaration, of, what string) string {
 	if c, ok := d.Call(what); what == GrantRead {
 		var reads []string
 		for _, c := range d.Calls {
-			if c.Kind == source.Read {
+			if c.Kind == source.Read && !c.Answer.File {
 				reads = append(reads, callSays(c))
 			}
 		}
@@ -584,10 +584,8 @@ func grantCallMay(d *source.Declaration, of, what string) string {
 			today = "today the source has none"
 		}
 		return fmt.Sprintf("may make every read call %s: %s, and it covers any read call the operator later gives the source.", of, today)
-	} else if ok && c.Kind == source.Update {
-		return fmt.Sprintf("may make the call %s %s, which changes something there.", callSays(*c), of)
 	} else if ok {
-		return fmt.Sprintf("may make the call %s %s, which the declaration says reads there and changes nothing.", callSays(*c), of)
+		return fmt.Sprintf("may make the call %s %s%s", callSays(*c), of, grantTail(c))
 	}
 	return ""
 }

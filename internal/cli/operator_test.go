@@ -23,7 +23,7 @@ func styledYard(t *testing.T, args ...string) (*app, store.API, string) {
 	if out, err := run(t, a.rootCmd(), append([]string{"init", "--harness", "claude", "--operator", "Jo"}, args...)...); err != nil {
 		t.Fatalf("init %v: %v\n%s", args, err, out)
 	}
-	if err := st.PutDepot(ctx, store.Depot{Name: "yard"}, "me"); err != nil {
+	if err := st.PutDepot(ctx, store.Depot{Name: "yard"}, "Jo"); err != nil {
 		t.Fatal(err)
 	}
 	b, err := st.CreateBead(ctx, store.NewBead{Title: "x", Depot: "yard"}, "me")
@@ -204,6 +204,15 @@ func TestPrimesSayTheStyle(t *testing.T) {
 					t.Errorf("operator = %+v, want %+v", v.Operator, want)
 				}
 			}
+			// The Prime read repeats what the primes say of the operator
+			// (store.Prime), so it is held to the same words.
+			read, err := st.Prime(context.Background(), "yardmaster")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := (store.PrimeOperator{Name: "Jo", Style: s.key, Label: s.label, Tells: s.tells, Note: note}); read.Operator == nil || *read.Operator != want {
+				t.Errorf("the Prime read's operator = %+v, want %+v", read.Operator, want)
+			}
 		}
 	}
 }
@@ -221,6 +230,9 @@ func TestPrimesWithoutStyle(t *testing.T) {
 			t.Errorf("a yard without the setting says something about the operator:\n%s", out)
 		}
 	}
+	if read, err := st.Prime(context.Background(), "yardmaster"); err != nil || read.Operator != nil {
+		t.Errorf("the Prime read of a yard without the setting says %+v, %v about the operator", read.Operator, err)
+	}
 	if _, err := run(t, a.rootCmd(), "settings", "set", noteSetting, "I am on call this week", "--actor", "Jo"); err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +242,13 @@ func TestPrimesWithoutStyle(t *testing.T) {
 		if strings.Contains(out, "asked agents") {
 			t.Errorf("a note alone gave a style:\n%s", out)
 		}
+	}
+	read, err := st.Prime(context.Background(), "yardmaster")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (store.PrimeOperator{Name: "Jo", Note: "I am on call this week"}); read.Operator == nil || *read.Operator != want {
+		t.Errorf("the Prime read of a note alone says %+v, want %+v", read.Operator, want)
 	}
 }
 

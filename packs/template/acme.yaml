@@ -35,6 +35,14 @@ credential:
   # env sets every mint name the token is minted; one of them alone is
   # refused; otherwise the variable above is used as it is set.
   mint: [ACME_APP_ID, ACME_APP_KEY_FILE]
+  # An input that names its holder's account belongs to that one holder:
+  # write it as a mapping with bound beside secret, and the yard refuses
+  # that value for any other holder, when it is given and when a call
+  # made as a user reads it:
+  # mint:
+  #   - name: ACME_ACCOUNT
+  #     secret: false
+  #     bound: true
   # The command that turns the mint names' values into a token: run with
   # {inputs, scope} on stdin, answering {token, expires_at}. A
   # declaration may bring it, a program beside this one that
@@ -43,6 +51,16 @@ credential:
   # over it. Drop it where the operator sets the mint command instead,
   # or with mint above where the token does not expire.
   mint_command: [acme/mint]
+  # Drop login where signing in needs no words of the pack's: it is the
+  # pack's sign-in for this credential, the shell lines a person runs on
+  # their own machine to make the login, in order, and the one line that
+  # says what to paste into which card. The setup card shows them at its
+  # account step and a secret card for this credential shows them above
+  # its field, marked as the pack's and as shown only: the yard never
+  # runs them, and the value still travels the secret path alone.
+  # login:
+  #   run: [acme auth login, acme auth export]
+  #   paste: paste the whole export into the sign-in card for this account
 
 # ---- what it sends us ----------------------------------------------------
 # Drop the whole key where the service sends nothing in: without it the
@@ -197,6 +215,16 @@ bases:
 # to say, and a key given for another host is held back until it is
 # given again for this one.
 base_template: https://{host}
+# Drop path_template where the service scopes nothing by site. Where it
+# scopes its calls by site (a per-site address under one host), it is the
+# address that site fills, with {site} once as one path segment and never
+# as the host: `yardr source set acme site=cloud-1` then sends every call
+# to https://acme.example.com/ex/cloud-1/wiki, and the setup card asks for
+# the site above the key. base stays the default. Only the segment is the
+# operator's to say, and a key given for one site is keyed to the host and
+# that segment together, so it is held back from another site on the same
+# host until it is given again for this one.
+path_template: https://acme.example.com/ex/{site}/wiki
 check: ping
 idempotency: Idempotency-Key
 # Each call is a separately grantable request. Keep the calls the service
@@ -223,6 +251,21 @@ calls:
       text:  { type: string, max: 2000 }
       link:  { type: string, max: 512, optional: true }
     request: { method: POST, path: /messages, body: { to: "{user}", title: "{title}", text: "{text}", link: "{link}" } }
+
+# ---- what its commands need on the machine --------------------------------
+# Drop the whole key where the service's commands need nothing beyond
+# what the yard itself runs: each program a command runs, the variable
+# that may name another path to it (checked first), and the install
+# that gets it, an argv run without a shell. A relative install
+# program is a file beside this one, carried and shown whole as every
+# command file is; an absolute one stays in a terminal. The yard
+# reports what is missing (doctor, the setup card) and installs only
+# as yardr pack install runs it, in a terminal or on a card the
+# operator approves. One install file branches on uname itself.
+# needs:
+#   - program: acme-cli
+#     env: ACME_CLI_BIN
+#     install: [acme/install-cli]
 
 # ---- telling a person through it ------------------------------------------
 # Drop the whole key where the service tells no person: without it no user

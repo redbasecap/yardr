@@ -426,7 +426,7 @@ func (a *app) beadCmd() *cobra.Command {
 	unfold := a.newBeadUnfoldCmd()
 
 	revFlag(update, done, advance, closeCmd, reopen, hold, unhold, release)
-	cmd.AddCommand(create, show, history, list, update, note, ask, answer, done, advance, closeCmd, reopen, hold, unhold, release, fold, unfold)
+	cmd.AddCommand(create, show, history, list, update, note, ask, answer, done, advance, closeCmd, reopen, hold, unhold, release, fold, unfold, a.newBeadFilesCmd(), a.newBeadRmCmd())
 	cmd.AddCommand(a.watchCmds()...)
 	return cmd
 }
@@ -602,7 +602,7 @@ kept the previous values says that the body changed, without a diff.`,
 				for _, ch := range h {
 					what := ch.Text
 					// One line an event: a note is cut short and may break lines.
-					if note := strings.Join(strings.Fields(ch.Note), " "); note != "" {
+					if note := strings.Join(strings.Fields(store.NoteLetters(ch.Note)), " "); note != "" {
 						what += ": " + note
 					}
 					actor := store.OneLine(store.MarkedAuthor(ch.Actor, as))

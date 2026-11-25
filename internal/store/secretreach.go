@@ -41,7 +41,20 @@ func (s AskSecret) Reach() []string {
 		return []string{
 			fmt.Sprintf("lands in: hooks/%s.secret in the yard's home, mode 0600", s.Hook),
 			fmt.Sprintf("read by: the yard, to check each delivery to POST /hooks/%s", s.Hook),
+			"replaces: what the file holds; where the hook stands already, deliveries signed with the old secret are refused from then on",
 			"not reached: any env_file, call or thread command",
+		}
+	case s.Google != "" && s.As != "":
+		return []string{
+			fmt.Sprintf("lands in: .config/gws-accounts/%s/credentials.json in the yard machine's home, mode 0600", s.Google),
+			fmt.Sprintf("read by: google-mint, minting a token for calls made as %s (yardr call ... --as %s)", s.As, s.As),
+			"not reached: calls made without --as, other users' accounts, any env_file",
+		}
+	case s.Google != "":
+		return []string{
+			"lands in: .config/gws/credentials.json in the yard machine's home, mode 0600",
+			"read by: google-mint, minting a token for the yard's Google calls",
+			"not reached: calls made as a user, which read that account's own file; any env_file",
 		}
 	case s.User != "":
 		return []string{
@@ -92,7 +105,8 @@ func (s AskSecret) ReachGiven() []string {
 }
 
 // cardLines are the lines a card of the secret ask s carries under Line,
-// without the margin: where its value goes, in the words that suit what it
+// without the margin: the pack's sign-in steps where its credential
+// declares them, where its value goes, in the words that suit what it
 // is, and for a value kept in a file its Reach.
 func (s AskSecret) cardLines() []string {
 	switch {
@@ -101,5 +115,7 @@ func (s AskSecret) cardLines() []string {
 	case s.Login != "":
 		return []string{"it goes to the waiting login only; it is kept nowhere, and no agent is shown it"}
 	}
-	return append([]string{"it goes to a file only the yard's server reads; no agent is shown it"}, s.Reach()...)
+	lines := s.LoginLines()
+	lines = append(lines, "it goes to a file only the yard's server reads; no agent is shown it")
+	return append(lines, s.Reach()...)
 }

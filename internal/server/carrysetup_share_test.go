@@ -21,7 +21,7 @@ func askSetupAccount(t *testing.T, st *store.Store, bead, pack string, option in
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.ApproveSetup(ctx, bead, seq, option, nil, account, "mckean", true, ""); err != nil {
+	if _, err := st.ApproveSetup(ctx, bead, seq, option, nil, account, "mckean", true, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	return seq
@@ -99,6 +99,103 @@ func TestCarrySetupPickPointsEnvFile(t *testing.T) {
 	}
 }
 
+// The embedded google-mail pack's own setup card leads with its
+// sign-in at the account step: the login and export for Gmail, and
+// what to paste into which card, as its declaration words them. Where
+// gws is missing it also names yardr pack install google-mail, and
+// installing gws afterwards leaves the open setup card approvable;
+// where gws stands (on PATH or via GWS_BIN) it stays silent.
+func TestCarrySetupGoogleMailShowsItsSignIn(t *testing.T) {
+	ctx := context.Background()
+	st, _, bead := carryYard(t)
+	to := store.Grantee{Crew: "yardmaster"}
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	t.Setenv("GWS_BIN", "")
+	seq, err := st.AddAsk(ctx, bead, setupAskOf("google-mail", to), "yardmaster")
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err := st.Notes(ctx, bead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var setup *store.AskSetup
+	for _, r := range store.ResolveAsks(notes, time.Now()) {
+		if r.Note.Seq == seq {
+			setup = r.Ask.Setup
+		}
+	}
+	if setup == nil {
+		t.Fatalf("ask %d sets up no pack", seq)
+	}
+	joined := strings.Join(setup.Does, "\n")
+	for _, want := range []string{
+		"the pack's sign-in, shown only and never run by the yard: run gws auth login -s gmail; then gws auth export --unmasked",
+		"paste the whole output of gws auth export --unmasked into the Google sign-in card for this account",
+		"the pack needs gws, which is not on this machine: yardr pack install google-mail installs it",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("google-mail's setup card lacks %q:\n%s", want, joined)
+		}
+	}
+	accountAt := setupLineIndex(setup.Does, "the account GOOGLE_ACCOUNT")
+	signAt := setupLineIndex(setup.Does, "the pack's sign-in")
+	if accountAt < 0 || signAt != accountAt+1 {
+		t.Errorf("the sign-in stands at %d, the account at %d, want it right after the account:\n%s", signAt, accountAt, joined)
+	}
+	// Standing gws via GWS_BIN silences a fresh setup card.
+	gwsBin := filepath.Join(t.TempDir(), "gws")
+	if err := os.WriteFile(gwsBin, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GWS_BIN", gwsBin)
+	seqEnv, err := st.AddAsk(ctx, bead, setupAskOf("google-mail", to), "yardmaster")
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err = st.Notes(ctx, bead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range store.ResolveAsks(notes, time.Now()) {
+		if r.Note.Seq == seqEnv && strings.Contains(strings.Join(r.Ask.Setup.Does, "\n"), "the pack needs gws") {
+			t.Errorf("google-mail's setup card names gws when GWS_BIN stands:\n%s", strings.Join(r.Ask.Setup.Does, "\n"))
+		}
+	}
+	// Standing gws on PATH silences a fresh setup card too, and leaves
+	// the earlier setup card (asked while gws was missing) approvable.
+	t.Setenv("GWS_BIN", "")
+	if err := os.WriteFile(filepath.Join(bin, "gws"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	seqPath, err := st.AddAsk(ctx, bead, setupAskOf("google-mail", to), "yardmaster")
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, err = st.Notes(ctx, bead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range store.ResolveAsks(notes, time.Now()) {
+		if r.Note.Seq == seqPath && strings.Contains(strings.Join(r.Ask.Setup.Does, "\n"), "the pack needs gws") {
+			t.Errorf("google-mail's setup card names gws when gws is on PATH:\n%s", strings.Join(r.Ask.Setup.Does, "\n"))
+		}
+	}
+	if _, err := st.ApproveSetup(ctx, bead, seq, 1, map[string]string{"GOOGLE_ACCOUNT": "ops@example.com"}, "", "mckean", true, "", ""); err != nil {
+		t.Fatalf("approving the setup card after installing gws: %v", err)
+	}
+}
+
+func setupLineIndex(lines []string, prefix string) int {
+	for i, line := range lines {
+		if strings.HasPrefix(line, prefix) {
+			return i
+		}
+	}
+	return -1
+}
+
 // The first setup of google-docs writes one typed value to its first
 // source's default and points both sources at it, the file named on the
 // card.
@@ -125,7 +222,7 @@ func TestCarrySetupGoogleDocsWritesOnceAndPointsBoth(t *testing.T) {
 		t.Fatalf("the card names %s, want %s", file, want)
 	}
 	if _, err := st.ApproveSetup(ctx, bead, seq, 1,
-		map[string]string{"GOOGLE_ACCOUNT": "ops@example.com"}, "", "mckean", true, ""); err != nil {
+		map[string]string{"GOOGLE_ACCOUNT": "ops@example.com"}, "", "mckean", true, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	drain(t, st, home, "boot-one")

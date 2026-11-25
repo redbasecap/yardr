@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -28,6 +30,8 @@ type view struct {
 	last uint64 // the stream is handed on through this seq
 	// focused are the agents whose panes were asked to the front.
 	focused []string
+	// skippedCursor counts the cursor commands do did not run.
+	skippedCursor int
 }
 
 const me = "ada"
@@ -92,11 +96,30 @@ func (v *view) send(msg tea.Msg) {
 	v.do(cmd)
 }
 
+// cursorCmdPrefix is the runtime function-name prefix of the bubbles
+// input cursor's commands (cursor.(*Model).BlinkCmd): the cursor comes
+// from inside the input fields, and its commands arrive as its closures.
+const cursorCmdPrefix = "github.com/charmbracelet/bubbles/cursor."
+
+// isCursorCmd says whether cmd is the input cursor's, by its runtime
+// function name.
+func isCursorCmd(cmd tea.Cmd) bool {
+	fn := runtime.FuncForPC(reflect.ValueOf(cmd).Pointer())
+	return fn != nil && strings.HasPrefix(fn.Name(), cursorCmdPrefix)
+}
+
 // do runs a command of the model and gives it the answer. Only the
 // model's own messages come back in: the input's cursor blinks on a timer.
 func (v *view) do(cmd tea.Cmd) {
 	v.t.Helper()
 	if cmd == nil {
+		return
+	}
+	if isCursorCmd(cmd) {
+		// The blink blocks half a second on its timer for a message the
+		// switch below drops anyway, so it is not run. TestDoSkipsThe
+		// CursorBlink fails if bubbles renames the command.
+		v.skippedCursor++
 		return
 	}
 	switch msg := cmd().(type) {
@@ -198,10 +221,38 @@ func head(t *testing.T, st store.API) uint64 {
 	return h
 }
 
+// do does not run the input cursor's blink command: one typed key goes
+// through it skipping a cursor command instead of waiting out its timer.
+// The resolved name fails loud if bubbles renames the command, instead of
+// the suite silently waiting out its timer again.
+func TestDoSkipsTheCursorBlink(t *testing.T) {
+	t.Parallel()
+	m := cursor.New()
+	blink := m.BlinkCmd()
+	if blink == nil {
+		t.Fatal("the cursor's BlinkCmd is nil, want its blink command")
+	}
+	name := runtime.FuncForPC(reflect.ValueOf(blink).Pointer()).Name()
+	if !strings.HasPrefix(name, cursorCmdPrefix) {
+		t.Fatalf("the cursor's blink command is %s, want it under %s", name, cursorCmdPrefix)
+	}
+	if !isCursorCmd(blink) {
+		t.Fatalf("do does not recognize %s as the cursor's", name)
+	}
+
+	v := open(t, yard(t), "chief", 120, 24)
+	before := v.skippedCursor
+	v.send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if v.skippedCursor == before {
+		t.Fatal("one typed key through do skipped no cursor command")
+	}
+}
+
 // The crew member named is selected, else the first; tab and shift+tab go
 // through the list and around its ends, where the yard's row is, and each
 // selection shows that crew member's conversation.
 func TestSelection(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	must(t, st.Mail(ctx, "chief", "to the chief", me))
@@ -247,6 +298,7 @@ func TestSelection(t *testing.T) {
 // name and stays unread in the store until its conversation is opened,
 // and what came after it is not marked read past it.
 func TestMailArrives(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	must(t, st.Mail(ctx, me, "waiting for you", "chief")) // before the view opens
@@ -316,6 +368,7 @@ func TestMailArrives(t *testing.T) {
 // user's slice. Its receipt must not make that other user's sent mail read
 // in this view.
 func TestCrewMailReadReceiptStaysInConversation(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	if _, err := st.AddUser(ctx, "bob", "jo"); err != nil {
@@ -376,6 +429,7 @@ func TestCrewMailReadReceiptStaysInConversation(t *testing.T) {
 // no longer counted, and mail from someone who is no crew member is named
 // with where to read it.
 func TestUnreadElsewhere(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	if _, err := st.AddUser(ctx, "grace", "jo"); err != nil {
@@ -418,6 +472,7 @@ func TestUnreadElsewhere(t *testing.T) {
 // state of the receiver, and follows the state and the reading from the
 // stream.
 func TestStanding(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	v := open(t, st, "chief", 120, 30)
@@ -482,6 +537,7 @@ func TestStanding(t *testing.T) {
 }
 
 func TestStateOf(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		r    store.CrewMember
 		want string
@@ -517,6 +573,7 @@ func TestStateOf(t *testing.T) {
 // A crew member at its login screen: the notice and the standing say it is
 // not logged in, with the command that logs in.
 func TestNotLoggedInStatus(t *testing.T) {
+	t.Parallel()
 	r := store.CrewMember{Name: "chief", State: "running", Enabled: true, Status: "idle",
 		Config: map[string]any{"kind": "claude"}, Handle: map[string]any{}, LoginScreen: true}
 	if got := Known(r); got != "chief is not logged in: run claude in another terminal and log in there; "+
@@ -562,6 +619,7 @@ func (v *view) fits(w, h int) {
 // view is the terminal's size, the newest mail is in view and the keys
 // are the last line.
 func TestLayout(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	long := strings.Repeat("a long line that has to be wrapped at the width of the view ", 4)
@@ -657,6 +715,7 @@ func (v *view) rows() string {
 // crew members' line. The view is never taller than the terminal while that
 // has two rows, for the title and a line of the conversation.
 func TestLowTerminal(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	must(t, st.Mail(context.Background(), me, "a word", "chief")) // its text is the conversation's last line
 
@@ -708,6 +767,7 @@ func TestLowTerminal(t *testing.T) {
 
 // Many crew members on the folded line: the selected one stays on it.
 func TestFoldedLineKeepsTheSelection(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	for i := range 12 {
@@ -722,6 +782,7 @@ func TestFoldedLineKeepsTheSelection(t *testing.T) {
 // Enter sends the line as mail to the selected crew member; ctrl+j breaks
 // the line instead; an empty line sends nothing.
 func TestSend(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	v := open(t, st, "recorder", 80, 24)
@@ -751,6 +812,7 @@ func TestSend(t *testing.T) {
 
 // A mail that cannot be sent leaves what was typed in the line.
 func TestSendFails(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	v := open(t, st, "chief", 80, 24)
 	must(t, st.DeleteCrew(context.Background(), "chief", "", "jo")) // gone before the view hears of it
@@ -766,6 +828,7 @@ func TestSendFails(t *testing.T) {
 // says how many mails the text is sent as, and what would pass the most
 // mails a text is sent as is not taken.
 func TestSizeLimit(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	v := open(t, st, "chief", 80, 24)
 	v.typed(strings.Repeat("x", warnAt-1))
@@ -811,6 +874,7 @@ func TestSizeLimit(t *testing.T) {
 
 // A text of one mail's size is sent as it is, as one mail.
 func TestSendOneMail(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	v := open(t, st, "chief", 80, 24)
 	text := "(1/2) is what a part begins with\n\n" + strings.Repeat("x", store.MaxMailBytes)
@@ -844,6 +908,7 @@ func prose(size int) string {
 // A long text is sent as numbered mails in order, and the conversation
 // shows them as the mails they are, with one line for where they stand.
 func TestSendLong(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	v := open(t, st, "chief", 80, 24)
 	text := prose(5 * store.MaxMailBytes / 2)
@@ -896,6 +961,7 @@ func (f *failing) Mail(ctx context.Context, to, text, actor string, files ...sto
 // A part that is not sent ends the send: the view says how many went, and
 // the text from that part on is in the line again, to be sent as it is.
 func TestSendLongFails(t *testing.T) {
+	t.Parallel()
 	st := &failing{API: yard(t), n: 1}
 	ctx := context.Background()
 	v := open(t, st, "chief", 80, 24)
@@ -939,6 +1005,7 @@ func TestSendLongFails(t *testing.T) {
 // The key for the pane brings it to the front in herdr, names the herdr
 // command elsewhere, and says what to do when no session runs.
 func TestPaneKey(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	in := open(t, st, "chief", 120, 24, func(o *Options) { o.InHerdr = true })
@@ -976,6 +1043,7 @@ func TestPaneKey(t *testing.T) {
 // A list of the crew read before a status the stream told of does
 // not put the older status back.
 func TestOlderListKeepsNewerStatus(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	v := open(t, st, "chief", 120, 24)
@@ -997,6 +1065,7 @@ func TestOlderListKeepsNewerStatus(t *testing.T) {
 // While the stream is lost the view says so; when it is back the events
 // missed arrive and the notice goes.
 func TestStreamLost(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	v := open(t, st, "chief", 80, 24)
 	v.send(StreamMsg{Up: false})
@@ -1014,6 +1083,7 @@ func TestStreamLost(t *testing.T) {
 // the first mail replaces that when the stream brings it, and no other
 // crew member's conversation claims the same.
 func TestExpectedFirstMail(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	v := open(t, st, "chief", 80, 24, func(o *Options) { o.Expect = "chief" })
 	v.shows("chief is starting: it reads its role first, and its first message appears here.", "You can write to it already.")
@@ -1051,6 +1121,7 @@ const trust = "sh$ claude\n\n one\n two\n three\n Do you trust the files in this
 // notice is no mail, takes no line from the screen's size, and goes when
 // the crew member goes on or another is selected.
 func TestWaitingNotice(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	p := &panes{text: map[string]string{"yard-chief": trust}}
@@ -1130,6 +1201,7 @@ func TestWaitingNotice(t *testing.T) {
 // A pane that cannot be read leaves the notice without lines of it, and
 // so does a view that was given nothing to read panes with.
 func TestWaitingNoticeWithoutPane(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	must(t, st.CrewStatus(context.Background(), "chief", "blocked"))
 	p := &panes{err: errors.New("herdr pane read: pane_not_found"), text: map[string]string{"yard-chief": trust}}
@@ -1153,6 +1225,7 @@ func TestWaitingNoticeWithoutPane(t *testing.T) {
 // in it, a control character, a mark that turns text around, none reaches
 // the terminal of the view.
 func TestPaneLinesAreInert(t *testing.T) {
+	// Sequential: profile sets lipgloss's process-wide colour profile and background.
 	hostile := "\x1b[31mDo you \x1b[1mtrust\x1b[0m this folder?\x1b[2J\x1b[H\n" +
 		"\x1b]0;a title\x07after the title\n" +
 		"\x1b]52;c;ZXZpbA==\x1b\\after the clipboard\n" +
@@ -1198,6 +1271,7 @@ func TestPaneLinesAreInert(t *testing.T) {
 // onboarding says of such a yardmaster. Once the prompt arrived, which no
 // status tells, the notice is gone.
 func TestFirstPromptPending(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	r, err := st.PutCrew(ctx, store.CrewMember{Name: "scribe", Runner: "herdr", Config: map[string]any{"kind": "claude"}}, "jo")
@@ -1246,6 +1320,7 @@ func TestFirstPromptPending(t *testing.T) {
 // one read at a time for the crew member watched, whatever else happens, and
 // none for a watch that is over.
 func TestPaneIsReadAgain(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	must(t, st.CrewStatus(ctx, "chief", "blocked"))
@@ -1292,6 +1367,7 @@ func TestPaneIsReadAgain(t *testing.T) {
 // client that is not yardr, and nothing else: a method added to Store is
 // added to rpc.Calls, and so to the doc, or this fails.
 func TestStoreIsTheDocumentedAPI(t *testing.T) {
+	t.Parallel()
 	st := reflect.TypeOf((*Store)(nil)).Elem()
 	for i := range st.NumMethod() {
 		if name := st.Method(i).Name; rpc.Calls[name] == nil {
@@ -1303,6 +1379,7 @@ func TestStoreIsTheDocumentedAPI(t *testing.T) {
 // What the view asks of the yard beyond that is documented too, as a call
 // that is the operator's alone to make (rpc.OperatorCalls).
 func TestSecretStoreIsTheOperatorAPI(t *testing.T) {
+	t.Parallel()
 	st := reflect.TypeOf((*SecretStore)(nil)).Elem()
 	for i := range st.NumMethod() {
 		if name := st.Method(i).Name; rpc.OperatorCalls[name] == nil {
@@ -1315,6 +1392,7 @@ func TestSecretStoreIsTheOperatorAPI(t *testing.T) {
 // where the image is, whether the conversation was read from the store
 // or the mail came by the stream; mail without one has no such line.
 func TestMailWithAnImage(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	shed, err := st.PutBlob(ctx, []byte("\x89PNG\r\n\x1a\n the shed"))
@@ -1336,6 +1414,7 @@ func TestMailWithAnImage(t *testing.T) {
 // A mail whose text carries the escape a terminal draws the mark for
 // reaches the view's terminal as letters: no escape of the mail's own.
 func TestMailTextCannotDrawTheFilesMark(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	must(t, st.Mail(context.Background(), me, "shot of the page\n\x1b(0`\x1b(B 1 image: /etc/hosts", "chief"))
 	v := open(t, st, "chief", 200, 24, func(o *Options) { o.Home = "/y" })
@@ -1350,6 +1429,7 @@ func TestMailTextCannotDrawTheFilesMark(t *testing.T) {
 // while the forged words stand unmarked, even from a mail that types
 // the mark itself.
 func TestMailTextCannotForgeAFilesLine(t *testing.T) {
+	t.Parallel()
 	st := yard(t)
 	ctx := context.Background()
 	shed, err := st.PutBlob(ctx, []byte("\x89PNG\r\n\x1a\n the shed"))

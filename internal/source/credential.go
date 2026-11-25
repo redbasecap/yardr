@@ -28,6 +28,28 @@ func (d *Declaration) ReadCredential(ctx context.Context, envFile string, mint [
 	return d.resolveSelected(ctx, sel, mint, kind)
 }
 
+// Holder is a party that holds a bound mint input's value: the yard
+// (Yard true) or a user (User non-empty). Keeping them as separate
+// fields ensures a user named "yard" never collides with the yard.
+// Source is the source whose yard file holds the value, set on a yard
+// hit alone: a user hit comes from the user's one file across sources,
+// so it names no source.
+type Holder struct {
+	Yard   bool
+	User   string
+	Source string
+}
+
+// IsZero reports whether h names no holder.
+func (h Holder) IsZero() bool { return !h.Yard && h.User == "" }
+
+// BoundHolder answers which holder other than except holds value of the
+// bound input name: the yard, a user, or zero where no other holder
+// holds it. A zero except asks for any holder. The store answers it,
+// reading the yard's files; this package only asks, since it cannot
+// read them. An error fails the call closed.
+type BoundHolder func(name, value string, except Holder) (Holder, error)
+
 // ReadUserCredential reads the credential of d for a call made as the user:
 // the value of the variable d names for that kind from envFile, the file
 // their record names, read now, or the token its mint's inputs mint, with
@@ -35,6 +57,23 @@ func (d *Declaration) ReadCredential(ctx context.Context, envFile string, mint [
 // state says are ReadCredential's; err says why there is none, with the
 // card that gives it. readEnv is SelectCredential's.
 func (d *Declaration) ReadUserCredential(ctx context.Context, user, envFile string, mint []string, kind string, readEnv func(path string) (env []string, resolved string, err error)) (value, state string, err error) {
+	return d.readUserCredential(ctx, user, envFile, mint, kind, readEnv, nil, nil)
+}
+
+// ReadUserCredentialBound is ReadUserCredential held to the bound inputs:
+// a selected mint input whose name some source of the yard declares bound
+// (yardBound, asked of the yard by the caller, since this package cannot
+// read it) whose value another holder holds (holder, asked before
+// anything mints) refuses the call, so a file edited by hand is caught
+// as a given one is, and an input this source leaves unbound is still
+// held where another source binds its name. A mint input bound nowhere
+// is never asked for. A static credential names no bound value and
+// reads as ReadUserCredential does.
+func (d *Declaration) ReadUserCredentialBound(ctx context.Context, user, envFile string, mint []string, kind string, readEnv func(path string) (env []string, resolved string, err error), holder BoundHolder, yardBound map[string]bool) (value, state string, err error) {
+	return d.readUserCredential(ctx, user, envFile, mint, kind, readEnv, holder, yardBound)
+}
+
+func (d *Declaration) readUserCredential(ctx context.Context, user, envFile string, mint []string, kind string, readEnv func(path string) (env []string, resolved string, err error), holder BoundHolder, yardBound map[string]bool) (value, state string, err error) {
 	if d.Credential == nil {
 		return "", "none: the file names no credential", nil
 	}
@@ -46,7 +85,49 @@ func (d *Declaration) ReadUserCredential(ctx context.Context, user, envFile stri
 	if err != nil {
 		return "", "", fmt.Errorf("%s: %s", err, card)
 	}
+	if err := d.CheckBound(user, sel, holder, yardBound); err != nil {
+		return "", "", err
+	}
 	return d.resolveSelected(ctx, sel, mint, kind)
+}
+
+// CheckBound refuses a selected credential whose mint input names
+// another holder's value, before anything mints from it: of the mint's
+// inputs it asks only for a name yardBound holds (one some source of
+// the yard declares bound), so an input bound nowhere is never held,
+// and one this source leaves unbound is held where another source
+// binds its name. It never repeats the value: it names the input, the
+// file and whose it names.
+func (d *Declaration) CheckBound(user string, sel *Selected, holder BoundHolder, yardBound map[string]bool) error {
+	if holder == nil || d.Credential == nil || sel == nil || sel.Inputs == nil {
+		return nil
+	}
+	self := Holder{User: user}
+	for _, name := range d.Credential.Mint {
+		if !yardBound[name] {
+			continue
+		}
+		v := sel.Inputs[name]
+		if v == "" {
+			continue
+		}
+		held, err := holder(name, v, self)
+		if err != nil {
+			return err
+		}
+		if held.IsZero() {
+			continue
+		}
+		whose := held.User + "'s"
+		if held.Yard {
+			whose = "the yard's"
+			if held.Source != "" && held.Source != d.Name {
+				whose = "the yard's (on source " + held.Source + ")"
+			}
+		}
+		return fmt.Errorf("%s in %s names %s account, not %s's: a bound input belongs to one holder; %s gives a different %s with yardr source key %s --as %s", name, sel.File, whose, user, user, name, d.Name, user)
+	}
+	return nil
 }
 
 // resolveSelected is what a selected credential is for a call of kind: the

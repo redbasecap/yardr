@@ -1,16 +1,21 @@
 package web
 
-// A strong card's approval in the hosted web (design yardr-2nb1 5.1): the
+// A weighty card's approval in the hosted web (design yardr-2nb1 5.1): the
 // bead page approves run and setup cards, weight first with the yard's
-// sentences, and a strong card — trust or code in its stored weight — is
+// sentences, and a weighty card — any class in its stored weight — is
 // approved only under a fresh sign-in. Approving one starts the gateway
 // re-authentication unless the session's last authentication was a
-// strong-card re-authentication by this operator inside the window,
-// whichever strong card started it; a standing login, however recent,
+// weighty-card re-authentication by this user inside the window,
+// whichever weighty card started it; a standing login, however recent,
 // never counts. The return state is one-use and bound to its card,
 // consumed only for it, and the store takes the approval only with the
-// request's fresh witness. Anywhere but the hosted web a strong card
-// stays terminal-only.
+// request's fresh witness. Anywhere but the hosted web a weighty card
+// stays terminal-only, in footplate or at a terminal.
+//
+// A secret card's giving on its bead's page rides the same sign-in: the
+// typed values wait in a secret challenge for its short bound, and the
+// return gives them with the same witness. StrongWeight is untouched:
+// a secret ask weighs credential, never trust or code.
 
 import (
 	"context"
@@ -31,9 +36,30 @@ import (
 // used in.
 const freshPendingTTL = time.Hour
 
-// freshChallenge is a strong card's sign-in waiting at the gateway: the
-// card it was raised for and who raised it, when, and the approval it
-// carries back (a setup's preset pick, account and host, a run's values).
+// secretPendingTTL bounds a challenge that carries typed secret values, a
+// secret ask's or a setup card's account: the gateway's fresh window, far shorter than an approval's hour, since
+// the values wait in this view's memory alone until the sign-in returns.
+// Past it the challenge and its values are dropped, on the next save,
+// lookup or spend, whether or not another challenge ever comes.
+const secretPendingTTL = 15 * time.Minute
+
+// challengeTTL is how long ch may wait at the gateway: the short bound
+// for one holding typed secret values (a secret ask's, a setup's
+// account), any other's hour.
+func challengeTTL(ch freshChallenge) time.Duration {
+	if ch.secret || ch.typed {
+		return secretPendingTTL
+	}
+	return freshPendingTTL
+}
+
+// freshChallenge is a sign-in waiting at the gateway: the card it was
+// raised for and who raised it, when, and what it carries back (a weighty
+// card's approval: a setup's preset pick, account, host and site, a run's
+// values; or, where secret is set, a secret ask's typed values, given on
+// the return instead of approved; or, where mapping is set, a mapping
+// card's pick, its option and words with the revision its form was drawn
+// from, picked on the return instead of either).
 type freshChallenge struct {
 	bead    string
 	ask     uint64
@@ -43,11 +69,29 @@ type freshChallenge struct {
 	values  map[string]string
 	account string
 	host    string
+	site    string
+	secret  bool
+	// typed is whether values are a setup card's typed account secrets:
+	// every setup card is weighty (its account is a credential), so each
+	// one approved in the hosted web waits here with what was typed, and
+	// waits no longer than a secret ask's values do.
+	typed bool
+	// mapping is whether the challenge carries a mapping card's pick:
+	// option its number, words the pick's words (someone new's name),
+	// rev the bead revision its form was drawn from. It holds no typed
+	// secret value, so it waits freshPendingTTL as an approval does.
+	mapping bool
+	words   string
+	rev     string
+	// turn and held are the mapping ask's turn and held count as its
+	// form read them, which its guarded pick names on the return.
+	turn int
+	held int
 }
 
 // freshAuth is what a consumed challenge returned: the authentication time
 // the gateway's token carried, and the challenge it answered. One fresh
-// sign-in witnesses several strong cards inside the window, so a later
+// sign-in witnesses several weighty cards inside the window, so a later
 // card whose token carries the same time approves without a new sign-in.
 type freshAuth struct {
 	auth  time.Time
@@ -62,24 +106,61 @@ func freshState() string {
 	return base64.RawURLEncoding.EncodeToString(b[:])
 }
 
+// putFresh saves ch under state, first dropping every challenge past its
+// own bound (challengeTTL): a secret challenge's values go with it, so a
+// typed value waits no longer than its short bound even where no return
+// ever comes for it.
+func (s *Server) putFresh(state string, ch freshChallenge) {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	for st, old := range s.freshPending {
+		if time.Since(old.at) > challengeTTL(old) {
+			delete(s.freshPending, st)
+		}
+	}
+	s.freshPending[state] = ch
+}
+
+// lookupFresh is the challenge waiting under state, spent where it is
+// past its bound: an expired secret challenge's values are dropped with
+// it here, whether or not another challenge comes.
+func (s *Server) lookupFresh(state string) (freshChallenge, bool) {
+	s.freshMu.Lock()
+	defer s.freshMu.Unlock()
+	ch, ok := s.freshPending[state]
+	if ok && time.Since(ch.at) > challengeTTL(ch) {
+		delete(s.freshPending, state)
+		return freshChallenge{}, false
+	}
+	return ch, ok
+}
+
+// freshRedirect sends the browser to the gateway's re-authentication,
+// returning to returnTo: a 303, except for a request htmx made (the bead
+// page's forms), which is answered 200 with HX-Redirect so the browser
+// navigates whole, as approveStrong's step has always been.
+func freshRedirect(w http.ResponseWriter, r *http.Request, returnTo string) {
+	reauth := "/edge/reauth?return_to=" + url.QueryEscape(returnTo)
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", reauth)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, reauth, http.StatusSeeOther)
+}
+
 // beadApprove approves the run or setup card ask, as the request's user. A
-// routine card is approved as it always was, asking for no witness; a card
-// that is weighty but not strong keeps the window's no-gate words; a
-// strong card goes through its sign-in (approveStrong).
+// routine card is approved as it always was, asking for no witness; a
+// weighty card goes through its sign-in (approveStrong).
 func (s *Server) beadApprove(w http.ResponseWriter, r *http.Request, b *store.Bead, ask store.BeadAsk) {
 	ctx := r.Context()
 	user := s.acting(ctx)
-	option, values, account, host, ok := s.approveParams(w, r, b, ask)
+	option, values, account, host, site, ok := s.approveParams(w, r, b, ask)
 	if !ok {
 		return
 	}
-	if !store.StrongWeight(ask.Weight) {
-		if len(ask.Weight) > 0 {
-			s.beadAgain(w, r, b.ID, fmt.Sprintf("ask %d is %s, and this window has no gate. Approve it in footplate, or in a terminal on the yard's machine: yardr bead answer %s %d %s",
-				ask.Ask, store.WeightWords(ask.Weight), b.ID, ask.Ask, approveAgain(ask, host)))
-			return
-		}
-		done, err := s.approveNow(ctx, b.ID, ask, option, values, account, host, user, store.FreshWitness{}, false)
+	if !store.Weighty(ask.Weight) {
+		done, err := s.approveNow(ctx, b.ID, ask, option, values, account, host, site, user, store.FreshWitness{}, false)
 		if err != nil {
 			s.beadAgain(w, r, b.ID, err.Error())
 			return
@@ -91,7 +172,7 @@ func (s *Server) beadApprove(w http.ResponseWriter, r *http.Request, b *store.Be
 		http.Redirect(w, r, "/beads/"+url.PathEscape(b.ID), http.StatusSeeOther)
 		return
 	}
-	s.approveStrong(w, r, b, ask, option, values, account, host)
+	s.approveStrong(w, r, b, ask, option, values, account, host, site)
 }
 
 // pairingOwn reports whether ask is a device pair card asked of user
@@ -104,13 +185,31 @@ func pairingOwn(ask store.BeadAsk, user string) bool {
 	return ask.To == user && ask.Run != nil && store.IsDevicePairRun(ask.Run.Argv) && ask.Run.Argv[3] == user
 }
 
+// userkeyOwn reports whether ask is a user key card for user's own
+// address in a source, asked of user themselves: the weighty card a
+// member approves in the hosted web beside their own pairing, as
+// their own first-device pairing is approved there, under the same
+// fresh sign-in. The card's user (its argv's, store.IsUserKeyRun)
+// must be the user the card is asked of and the user acting.
+func userkeyOwn(ask store.BeadAsk, user string) bool {
+	return ask.To == user && ask.Run != nil && store.IsUserKeyRun(ask.Run.Argv) && ask.Run.Argv[2] == user
+}
+
+// ownCard reports whether ask is a card user may approve as their own
+// in the hosted web without being an operator: their own device
+// pairing, or their own user key.
+func ownCard(ask store.BeadAsk, user string) bool {
+	return pairingOwn(ask, user) || userkeyOwn(ask, user)
+}
+
 // freshFor is the fresh sign-in's word for ask as user: the operator's
-// (freshSession), or the named user's own on a pairing card.
+// (freshSession), or the named user's own on their own pairing or
+// user key card.
 func (s *Server) freshFor(ctx context.Context, ask store.BeadAsk, user string, since time.Time) bool {
 	if s.freshSession(ctx, since) {
 		return true
 	}
-	if s.jwt == nil || !pairingOwn(ask, user) {
+	if s.jwt == nil || !ownCard(ask, user) {
 		return false
 	}
 	return jwtIdentityOf(ctx).freshAt(time.Now(), s.jwt.privilegedSessionMaxAge, since)
@@ -122,12 +221,14 @@ func (s *Server) freshFor(ctx context.Context, ask store.BeadAsk, user string, s
 // the characters a host is made of. Anything else the form held is left out of
 // a command a person will copy: the card says how a host is given, and the
 // command refuses what is no host.
-func approveAgain(ask store.BeadAsk, host string) string {
+func approveAgain(ask store.BeadAsk, host, site string) string {
 	switch {
 	case ask.Setup == nil:
 		return "--approve"
 	case host != "" && strings.Trim(host, hostWordChars) == "":
 		return "<n> --secret --host " + host
+	case site != "" && strings.Trim(site, hostWordChars) == "":
+		return "<n> --secret --site " + site
 	}
 	return "<n> --secret"
 }
@@ -142,13 +243,13 @@ const hostWordChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234
 // instead, and the host of a server of the operator's own where the card
 // asked one, a run's values where the card asks for any. An ask that is
 // neither is refused with the page redrawn.
-func (s *Server) approveParams(w http.ResponseWriter, r *http.Request, b *store.Bead, ask store.BeadAsk) (option int, values map[string]string, account, host string, ok bool) {
+func (s *Server) approveParams(w http.ResponseWriter, r *http.Request, b *store.Bead, ask store.BeadAsk) (option int, values map[string]string, account, host, site string, ok bool) {
 	switch {
 	case ask.Setup != nil:
 		n, err := strconv.Atoi(r.PostFormValue("option"))
 		if err != nil || n < 1 || n > len(ask.Options) {
 			s.beadAgain(w, r, b.ID, fmt.Sprintf("ask %d sets up %s: pick one of its %d presets", ask.Ask, ask.Setup.Pack, len(ask.Options)))
-			return 0, nil, "", "", false
+			return 0, nil, "", "", "", false
 		}
 		option = n
 		for _, name := range ask.Setup.Account {
@@ -160,7 +261,7 @@ func (s *Server) approveParams(w http.ResponseWriter, r *http.Request, b *store.
 			}
 		}
 		account = r.PostFormValue("account")
-		return option, values, account, strings.TrimSpace(r.PostFormValue("host")), true
+		return option, values, account, strings.TrimSpace(r.PostFormValue("host")), strings.TrimSpace(r.PostFormValue("site")), true
 	case ask.Run != nil:
 		for _, name := range ask.Run.Ask {
 			if values == nil {
@@ -168,26 +269,30 @@ func (s *Server) approveParams(w http.ResponseWriter, r *http.Request, b *store.
 			}
 			values[name] = r.PostFormValue("value-" + name)
 		}
-		return 0, values, "", "", true
+		return 0, values, "", "", "", true
 	default:
 		s.beadAgain(w, r, b.ID, fmt.Sprintf("ask %d is answered, not approved: pick an option, answer with words, put it aside with Later, or decline it", ask.Ask))
-		return 0, nil, "", "", false
+		return 0, nil, "", "", "", false
 	}
 }
 
-// approveStrong approves a strong card under a fresh sign-in. Anywhere but
+// approveStrong approves a weighty card under a fresh sign-in. Anywhere but
 // the hosted web — no gateway, or a yard that is not hosted — the card
-// stays terminal-only. Where the session's last authentication is already
-// a strong-card re-authentication by this operator inside the window, the
-// card approves at once; otherwise the gateway authenticates now, and the
-// one-use state returns to this card alone. The step to the gateway is a 303,
-// except for a request htmx made (the bead page's forms), which is answered
-// 200 with HX-Redirect so the browser navigates whole.
-func (s *Server) approveStrong(w http.ResponseWriter, r *http.Request, b *store.Bead, ask store.BeadAsk, option int, values map[string]string, account, host string) {
+// stays terminal-only, in footplate or at a terminal. Where the session's
+// last authentication is already a weighty-card re-authentication by this
+// user inside the window, the card approves at once; otherwise the gateway
+// authenticates now, and the one-use state returns to this card alone. The
+// step to the gateway is a 303, except for a request htmx made (the bead
+// page's forms), which is answered 200 with HX-Redirect so the browser
+// navigates whole. A non-operator's click on a card that is not their own
+// pairing or user key is refused here, after the gateless refusals and
+// before any sign-in round trip: an operator's sign-in is what the page
+// takes for a weighty card that is not the clicker's own.
+func (s *Server) approveStrong(w http.ResponseWriter, r *http.Request, b *store.Bead, ask store.BeadAsk, option int, values map[string]string, account, host, site string) {
 	ctx := r.Context()
 	user := s.acting(ctx)
-	terminal := fmt.Sprintf("ask %d is %s: a strong card is not approved in this window. Approve it at a terminal on the yard's machine: yardr bead answer %s %d %s",
-		ask.Ask, store.StrongWords(ask.Weight), b.ID, ask.Ask, approveAgain(ask, host))
+	terminal := fmt.Sprintf("ask %d is %s: a weighty card is not approved in this window. Approve it in footplate, or at a terminal on the yard's machine: yardr bead answer %s %d %s",
+		ask.Ask, store.WeightyWords(ask.Weight), b.ID, ask.Ask, approveAgain(ask, host, site))
 	if s.jwt == nil {
 		s.beadAgain(w, r, b.ID, terminal)
 		return
@@ -201,9 +306,14 @@ func (s *Server) approveStrong(w http.ResponseWriter, r *http.Request, b *store.
 		s.beadAgain(w, r, b.ID, terminal)
 		return
 	}
-	if auth, since, ok := s.strongAuth(ctx, user); ok && s.freshSession(ctx, since) {
+	if !s.isOperator(ctx) && !ownCard(ask, user) {
+		s.beadAgain(w, r, b.ID, fmt.Sprintf("ask %d is %s: an operator's sign-in is what this page takes for a weighty card that is not your own. Approve it in footplate, or at a terminal on the yard's machine: yardr bead answer %s %d %s",
+			ask.Ask, store.WeightyWords(ask.Weight), b.ID, ask.Ask, approveAgain(ask, host, site)))
+		return
+	}
+	if auth, since, ok := s.strongAuth(ctx, user); ok && s.freshFor(ctx, ask, user, since) {
 		fw := store.FreshWitness{User: user, AuthTime: auth}
-		done, err := s.approveNow(ctx, b.ID, ask, option, values, account, host, user, fw, true)
+		done, err := s.approveNow(ctx, b.ID, ask, option, values, account, host, site, user, fw, true)
 		if err != nil {
 			s.beadAgain(w, r, b.ID, err.Error())
 			return
@@ -216,32 +326,19 @@ func (s *Server) approveStrong(w http.ResponseWriter, r *http.Request, b *store.
 		return
 	}
 	state := freshState()
-	s.freshMu.Lock()
-	for st, ch := range s.freshPending {
-		if time.Since(ch.at) > freshPendingTTL {
-			delete(s.freshPending, st)
-		}
-	}
-	s.freshPending[state] = freshChallenge{bead: b.ID, ask: ask.Ask, user: user, at: time.Now(),
-		option: option, values: values, account: account, host: host}
-	s.freshMu.Unlock()
+	s.putFresh(state, freshChallenge{bead: b.ID, ask: ask.Ask, user: user, at: time.Now(),
+		option: option, values: values, account: account, host: host, site: site, typed: ask.Setup != nil && len(values) > 0})
 	to := "/beads/" + url.PathEscape(b.ID) + "/fresh/" + strconv.FormatUint(ask.Ask, 10) + "/" + state
-	reauth := "/edge/reauth?return_to=" + url.QueryEscape(to)
 	// htmx follows a 303 as an XHR, and the sign-in page it reaches has no
 	// #bead for the form's hx-select to take: the bead's contents are
 	// swapped for nothing, the card and its form vanish, and the person
 	// never gets to the sign-in. HX-Redirect makes htmx navigate to the URL
-	// as a whole page.
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", reauth)
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	http.Redirect(w, r, reauth, http.StatusSeeOther)
+	// as a whole page (freshRedirect).
+	freshRedirect(w, r, to)
 }
 
-// strongAuth is the authentication time the operator's last consumed
-// strong challenge returned, with the challenge it answered: ok false
+// strongAuth is the authentication time the acting user's last consumed
+// challenge returned, with the challenge it answered: ok false
 // where no challenge has returned one for them on this view, or the
 // request's token carries another time. A standing login, however recent,
 // is never one a challenge returned.
@@ -259,7 +356,7 @@ func (s *Server) strongAuth(ctx context.Context, user string) (auth, since time.
 	return st.auth, st.since, true
 }
 
-// handleFresh takes the gateway's return after a strong card's sign-in:
+// handleFresh takes the gateway's return after a weighty card's sign-in:
 // the one-use state the approve minted, bound to its card. It consumes
 // the state and approves the card with the request's fresh witness, and
 // lands on the bead; a replayed or foreign state, a stale sign-in, or a
@@ -272,9 +369,7 @@ func (s *Server) handleFresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := r.PathValue("state")
-	s.freshMu.Lock()
-	ch, ok := s.freshPending[state]
-	s.freshMu.Unlock()
+	ch, ok := s.lookupFresh(state)
 	if !ok {
 		s.beadAgain(w, r, id, "that sign-in was used already, expired, or never started: approve the card again")
 		return
@@ -303,6 +398,14 @@ func (s *Server) handleFresh(w http.ResponseWriter, r *http.Request) {
 		s.beadAgain(w, r, id, fmt.Sprintf("ask %d on bead %s is answered already, or asked of another; read it again", ch.ask, id))
 		return
 	}
+	if ch.secret {
+		s.giveFreshSecret(w, r, state, ch, *ask, user)
+		return
+	}
+	if ch.mapping {
+		s.pickFreshMapping(w, r, state, ch, *ask, user)
+		return
+	}
 	if !s.freshFor(ctx, *ask, user, ch.at) {
 		s.beadAgain(w, r, id, "that sign-in is not fresh: the gateway authenticated before the card's challenge, or outside its window. Approve the card again")
 		return
@@ -313,13 +416,92 @@ func (s *Server) handleFresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fw := store.FreshWitness{User: user, AuthTime: auth}
-	done, err := s.approveNow(ctx, id, *ask, ch.option, ch.values, ch.account, ch.host, user, fw, true)
+	done, err := s.approveNow(ctx, id, *ask, ch.option, ch.values, ch.account, ch.host, ch.site, user, fw, true)
 	if err != nil {
 		s.beadAgain(w, r, id, err.Error())
 		return
 	}
 	if done != nil && done.Pairing != nil {
 		s.pairingApproved(w, r, id, done.Pairing)
+		return
+	}
+	http.Redirect(w, r, "/beads/"+url.PathEscape(id), http.StatusSeeOther)
+}
+
+// giveFreshSecret is handleFresh for a secret challenge: it gives the
+// values the challenge held, under the return's fresh sign-in, and lands
+// on the bead. It stands on the operator's fresh session alone (a member
+// gives no secret in the hosted web), spends the one-use state before it
+// gives, and clears the held values whatever the giving does. No error
+// it shows carries a value: the store's refusals name no value, and the
+// redrawn page's fields stand empty.
+func (s *Server) giveFreshSecret(w http.ResponseWriter, r *http.Request, state string, ch freshChallenge, ask store.BeadAsk, user string) {
+	ctx := r.Context()
+	id := ch.bead
+	if ask.Secret == nil {
+		s.beadAgain(w, r, id, fmt.Sprintf("ask %d asks for no secret: give the secret again", ch.ask))
+		return
+	}
+	if !s.freshSession(ctx, ch.at) {
+		s.beadAgain(w, r, id, "that sign-in is not fresh: the gateway authenticated before the card's challenge, or outside its window. Give the secret again")
+		return
+	}
+	auth := jwtIdentityOf(ctx).authTime
+	if !s.consumeFresh(state, ch, user, auth) {
+		s.beadAgain(w, r, id, "that sign-in was used already, expired, or never started: give the secret again")
+		return
+	}
+	values := ch.values
+	_, err := s.st.GiveSecret(store.WithFreshWitness(ctx, user, auth), id, ch.ask, values, user, true)
+	for name := range values {
+		delete(values, name)
+	}
+	ch.values = nil
+	if err != nil {
+		s.beadAgain(w, r, id, err.Error())
+		return
+	}
+	http.Redirect(w, r, "/beads/"+url.PathEscape(id), http.StatusSeeOther)
+}
+
+// pickFreshMapping is handleFresh for a mapping challenge: it picks the
+// option the challenge held, under the return's fresh sign-in, and lands
+// on the bead. It stands on the operator's fresh session alone (freshFor,
+// which a mapping card takes as an operator's), spends the one-use state
+// before it picks, and keeps the revision the pick's form was drawn from:
+// a bead that moved while its operator signed in is read again instead
+// of picked. The pick says its person saw the weight (weighed) only here,
+// where the handler has just taken the fresh sign-in, and carries the
+// fresh witness the store judges and records on the answer. No error it
+// shows carries the pick's words: they ride the challenge alone, and the
+// store's refusals name no more of them than a terminal pick's do.
+func (s *Server) pickFreshMapping(w http.ResponseWriter, r *http.Request, state string, ch freshChallenge, ask store.BeadAsk, user string) {
+	ctx := r.Context()
+	id := ch.bead
+	if ask.Identity == nil {
+		s.beadAgain(w, r, id, fmt.Sprintf("ask %d maps nobody: pick it again", ch.ask))
+		return
+	}
+	if !s.freshFor(ctx, ask, user, ch.at) {
+		s.beadAgain(w, r, id, "that sign-in is not fresh: the gateway authenticated before the card's challenge, or outside its window. Pick it again")
+		return
+	}
+	auth := jwtIdentityOf(ctx).authTime
+	if !s.consumeFresh(state, ch, user, auth) {
+		s.beadAgain(w, r, id, "that sign-in was used already, expired, or never started: pick it again")
+		return
+	}
+	b, err := s.st.GetBead(ctx, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if ch.rev == "" || ch.rev != b.Revision {
+		s.beadAgain(w, r, id, fmt.Sprintf("bead %s is at revision %s, not %s; read it again", b.ID, b.Revision, revOrNone(ch.rev)))
+		return
+	}
+	if err := s.st.AnswerAskExpected(store.WithFreshWitness(ctx, user, auth), id, ch.ask, ch.turn, ch.option, ch.words, user, true, ch.held); err != nil {
+		s.beadAgain(w, r, id, err.Error())
 		return
 	}
 	http.Redirect(w, r, "/beads/"+url.PathEscape(id), http.StatusSeeOther)
@@ -336,7 +518,7 @@ func (s *Server) consumeFresh(state string, challenge freshChallenge, user strin
 		current.user != challenge.user || current.user != user || !current.at.Equal(challenge.at) {
 		return false
 	}
-	if time.Since(current.at) > freshPendingTTL {
+	if time.Since(current.at) > challengeTTL(current) {
 		delete(s.freshPending, state)
 		return false
 	}
@@ -352,7 +534,7 @@ func (s *Server) consumeFresh(state string, challenge freshChallenge, user strin
 // carries a pairing, the caller answers with it in that response instead
 // of the redirect to the bead (pairingApproved). A setup approval's is
 // nil, as every other run approval's is beside its error.
-func (s *Server) approveNow(ctx context.Context, id string, ask store.BeadAsk, option int, values map[string]string, account, host, user string, fw store.FreshWitness, fresh bool) (*store.AskApproved, error) {
+func (s *Server) approveNow(ctx context.Context, id string, ask store.BeadAsk, option int, values map[string]string, account, host, site, user string, fw store.FreshWitness, fresh bool) (*store.AskApproved, error) {
 	if fresh {
 		ctx = store.WithFreshWitness(ctx, fw.User, fw.AuthTime)
 	}
@@ -360,6 +542,6 @@ func (s *Server) approveNow(ctx context.Context, id string, ask store.BeadAsk, o
 	if ask.Run != nil {
 		return s.st.ApproveAsk(ctx, id, ask.Ask, user, weighed, values)
 	}
-	_, err := s.st.ApproveSetup(ctx, id, ask.Ask, option, values, account, user, weighed, host)
+	_, err := s.st.ApproveSetup(ctx, id, ask.Ask, option, values, account, user, weighed, host, site)
 	return nil, err
 }

@@ -72,7 +72,7 @@ func TestPackCheckPrintsThePlan(t *testing.T) {
 		"source linear, for crew member boss\n  missing  hook ",
 		"its stage files would be copied to " + filepath.Join(a.cfg.Home, "flows", "starter.<flow>") + "\n",
 		"  create           flows/default/new.md -> " + filepath.Join(a.cfg.Home, "flows", "starter.default", "new.md") + "\n",
-		"40 to create, 0 to change, 0 unchanged, 0 not in the pack\n",
+		"39 to create, 0 to change, 0 unchanged, 0 not in the pack\n",
 		// What runs as the user who runs the yard, after the digest that
 		// pins it: one program here.
 		"\ndigest sha256:",
@@ -96,7 +96,7 @@ func TestPackCheckPrintsThePlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	var plan pack.Plan
-	if err := json.Unmarshal([]byte(out), &plan); err != nil || plan.Pack != "starter" || len(plan.Objects) != 40 || len(plan.Questions) != 13 {
+	if err := json.Unmarshal([]byte(out), &plan); err != nil || plan.Pack != "starter" || len(plan.Objects) != 39 || len(plan.Questions) != 13 {
 		t.Fatalf("json plan: %v\n%s", err, out)
 	}
 	// The digest is followed by the programs line, the plan's last line.
@@ -166,7 +166,7 @@ func TestPackCheckPrintsThePlan(t *testing.T) {
 		"  group.web-reviewers.kind: which agent runs group web-reviewers",
 		"  group.decisions.members: who is in group decisions",
 		"digest sha256:" + plan.Digest + "\n",
-		"40 to create, 0 to change, 0 unchanged, 0 not in the pack\n",
+		"39 to create, 0 to change, 0 unchanged, 0 not in the pack\n",
 	} {
 		if !strings.Contains(answered, want) {
 			t.Errorf("the answered plan lacks %q:\n%s", want, answered)
@@ -439,8 +439,45 @@ func TestPackCheckRefusedPlanFails(t *testing.T) {
 		t.Fatalf("err = %v, want the check failed", err)
 	}
 	if !strings.Contains(out, "an import would be refused\n  flow starter.default lacks the stage of open beads that would follow it: "+b.ID+" (triage)") ||
-		!strings.Contains(out, "40 to create") {
+		!strings.Contains(out, "39 to create") {
 		t.Fatalf("out:\n%s", out)
+	}
+	// The starter carries no yardmaster role, so its check says nothing of
+	// one. A copy that carries a role is refused for it, in the words that
+	// name the section the words move to, and an oversized section refuses
+	// it too.
+	if strings.Contains(out, "roles/yardmaster.md is no longer read") {
+		t.Fatalf("the starter's check refuses a role it does not carry:\n%s", out)
+	}
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS("../../packs/starter")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "roles", "yardmaster.md"), []byte("# Yardmaster\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	yamlFile := filepath.Join(dir, "pack.yaml")
+	text, err := os.ReadFile(yamlFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	with := strings.Replace(string(text), "  yardmaster:\n    hears:", "  yardmaster:\n    role: roles/yardmaster.md\n    section: sections/yardmaster.md\n    hears:", 1)
+	if with == string(text) {
+		t.Fatal("the starter's yardmaster has no line to add a role and a section under")
+	}
+	if err := os.WriteFile(yamlFile, []byte(with), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "sections"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sections", "yardmaster.md"), []byte("When it is quiet.\n"+strings.Repeat("x", 2048)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err = run(t, a.packCmd(), "check", dir, "--depot", "web")
+	if !errors.Is(err, errCheckFailed) || !strings.Contains(out, "an import would be refused") || !strings.Contains(out, "section sections/yardmaster.md holds") ||
+		!strings.Contains(out, "roles/yardmaster.md is no longer read: packs no longer set the yardmaster prompt — move these words to a section (pack.yaml crew section:, at most 2048 bytes, first line saying when it applies)") {
+		t.Fatalf("a yardmaster role and an oversized section: err = %v\nout:\n%s", err, out)
 	}
 }
 
@@ -592,7 +629,7 @@ func TestPackApplyWithFlags(t *testing.T) {
 	}
 	// The plan says what each new agent gets, arguments included: nobody
 	// is given them silently.
-	for _, want := range []string{"pack starter (", "40 to create", "\napplied pack starter to depot web: 40 created, 0 changed, 0 unchanged\n",
+	for _, want := range []string{"pack starter (", "39 to create", "\napplied pack starter to depot web: 39 created, 0 changed, 0 unchanged\n",
 		"  create           web-builders\n                     agent: claude\n                     model: opus\n                     arguments: --permission-mode auto\n",
 		"  create           web-reviewers\n                     agent: codex\n                     model: the agent's own default\n                     arguments: --dangerously-bypass-approvals-and-sandbox\n",
 		"  create           backlog\n                     members: anyone\n",
@@ -649,7 +686,7 @@ func TestPackApplyWithFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"starter in depot web  ", " by me\n", "  source     ", "  flow       default (stored as starter.default)\n",
-		"builders -> web-builders", "  crew       yardmaster -> boss\n", "  objects    14 files, 6 groups, 2 flows, 2 flow pointers, 11 routes, 4 subscriptions\n"} {
+		"builders -> web-builders", "  crew       yardmaster -> boss\n", "  objects    13 files, 6 groups, 2 flows, 2 flow pointers, 11 routes, 4 subscriptions\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("pack list lacks %q:\n%s", want, out)
 		}
@@ -661,7 +698,7 @@ func TestPackApplyWithFlags(t *testing.T) {
 		Plan   pack.Plan   `json:"plan"`
 		Result pack.Result `json:"result"`
 	}
-	if err != nil || json.Unmarshal([]byte(out), &got) != nil || got.Result.Unchanged != 40 || got.Result.Recorded || got.Plan.Depot != "web" || got.Plan.Digest != digest {
+	if err != nil || json.Unmarshal([]byte(out), &got) != nil || got.Result.Unchanged != 39 || got.Result.Recorded || got.Plan.Depot != "web" || got.Plan.Digest != digest {
 		t.Fatalf("json: %v\n%s", err, out)
 	}
 	out, err = run(t, a.packCmd(), "list")
@@ -704,7 +741,7 @@ func TestPackApplyAsksInATerminal(t *testing.T) {
 	}
 
 	decline = false
-	if out, err = run(t, a.packCmd(), args...); err != nil || !strings.Contains(out, "applied pack starter to depot web: 40 created") {
+	if out, err = run(t, a.packCmd(), args...); err != nil || !strings.Contains(out, "applied pack starter to depot web: 39 created") {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	// The select's default is a new crew member under the pack's name, and
@@ -1300,7 +1337,10 @@ func TestPackApplyKeepsWhatTheYardChangedUntilTaken(t *testing.T) {
 	if _, err := a.st.PutFlow(ctx, *flow, "me"); err != nil {
 		t.Fatal(err)
 	}
-	out, err = run(t, a.rootCmd(), append([]string{"pack"}, append(slices.Clone(args), "--yes", "--json")...)...)
+	// Through the root the run takes --actor: the app's own actor is for
+	// its pack commands alone, and without the flag the run acts as the
+	// OS user instead of the operator the yard imported as.
+	out, err = run(t, a.rootCmd(), append([]string{"pack"}, append(slices.Clone(args), "--yes", "--json", "--actor", testOperator(t, a.st))...)...)
 	var data struct {
 		Result struct {
 			Kept []string `json:"kept"`

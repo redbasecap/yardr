@@ -467,9 +467,10 @@ const codexOpen = `{"provider":"Codex","windows":[{"label":"5h","used_percent":9
 // group b: a runs kimi sessions with the model k3, and the bead returned is
 // started on a and seen working. first is the route's first group with its
 // condition, if any. The provider is declared once the session runs, as
-// holdYard's is, answering moonshot with moonshot's report and, where the
-// yard burns a second provider, openai with openai's; both groups' route
-// reads are primed, and the session is stopped on its usage limit, waiting
+// holdYard's is (before the start, where the first group is conditioned),
+// answering moonshot with moonshot's report and, where the yard burns a
+// second provider, openai with openai's; both groups' route reads are
+// primed, and the session is stopped on its usage limit, waiting
 // for the 5h window with k3. resets is when that window resets.
 func elseYard(t *testing.T, first string, b store.Group, moonshot func(time.Time) string, openai string) (s store.API, r *paneRunner, d *dispatch.Dispatcher, p *standIn, b1 store.Bead, now *time.Time, resets time.Time) {
 	t.Helper()
@@ -486,9 +487,25 @@ func elseYard(t *testing.T, first string, b store.Group, moonshot func(time.Time
 		Config: map[string]any{"kind": "kimi", "stall": "off", "model": "k3"}}, "me"))
 	must(t, s.PutGroup(ctx, b, "me"))
 	g := store.ParseRouteGroup(first)
+	// A conditioned first group is judged by its provider from the first
+	// claim, and a source that is not there fails it now, so its yard
+	// declares the provider before the start, as quotaYard's does. A
+	// group with no condition takes its first bead as it always did.
+	if g.When != "" {
+		p = newStandIn(t, s)
+		resets = at.Add(42 * time.Minute)
+		p.sayFor("moonshot", moonshot(resets))
+		if openai != "" {
+			p.sayFor("openai", openai)
+		}
+	}
 	_, err := s.AddRoute(ctx, store.Route{Stage: "new", Group: g.Name, When: g.When,
 		Else: []store.RouteGroup{{Name: "b"}}}, "me")
 	must(t, err)
+	if g.When != "" {
+		primeGroupLimits(t, s, d, "a")
+		primeGroupLimits(t, s, d, "b")
+	}
 	bead, err := s.CreateBead(ctx, store.NewBead{Title: "x"}, "me")
 	must(t, err)
 	must(t, d.Reconcile(ctx)) // start
@@ -499,11 +516,13 @@ func elseYard(t *testing.T, first string, b store.Group, moonshot func(time.Time
 	if group, _ := claimedBy(t, s, bead.ID); group != "a" {
 		t.Fatalf("claimed by %q, want a", group)
 	}
-	p = newStandIn(t, s)
-	resets = at.Add(42 * time.Minute)
-	p.sayFor("moonshot", moonshot(resets))
-	if openai != "" {
-		p.sayFor("openai", openai)
+	if p == nil {
+		p = newStandIn(t, s)
+		resets = at.Add(42 * time.Minute)
+		p.sayFor("moonshot", moonshot(resets))
+		if openai != "" {
+			p.sayFor("openai", openai)
+		}
 	}
 	primeLimits(t, d, "kimi", "", nil)
 	primeGroupLimits(t, s, d, "a")
@@ -619,6 +638,65 @@ func TestClaimPassesOverAGroupHeldByAUsageWait(t *testing.T) {
 				t.Fatalf("claimed by %q, want a again", group)
 			}
 		})
+	}
+}
+
+// An agy session stopped on its quota line, waiting for the reset the
+// line names, holds its model as one whose source spoke: a bead of that
+// model is claimed by the route's --else group, with the held group
+// passed over for its hold.
+func TestAgyQuotaHoldPassesTheRouteToItsElseGroup(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r := &paneRunner{retryRunner: &retryRunner{agentRunner: &agentRunner{statusRunner: &statusRunner{
+		fakeRunner: &fakeRunner{dead: map[string]bool{}}, status: "working"}, worked: true}}, panes: map[string][2]string{}}
+	s := storetest.New(t)
+	d := &dispatch.Dispatcher{Store: s, Runners: map[string]dispatch.Runner{"herdr": r}, Backoff: time.Hour}
+	t.Cleanup(func() { dispatch.WaitLimitsIdle(d) })
+	at := noon()
+	now := &at
+	dispatch.SetClock(d, func() time.Time { return *now })
+	must(t, s.PutGroup(ctx, store.Group{Name: "a", Runner: "herdr", Limit: 3,
+		Config: map[string]any{"kind": "agy", "stall": "off", "model": "m1"}}, "me"))
+	must(t, s.PutGroup(ctx, store.Group{Name: "b", Runner: "herdr", Limit: 1,
+		Config: map[string]any{"kind": "codex", "stall": "off"}}, "me"))
+	_, err := s.AddRoute(ctx, store.Route{Stage: "new", Group: "a",
+		Else: []store.RouteGroup{{Name: "b"}}}, "me")
+	must(t, err)
+	b1, err := s.CreateBead(ctx, store.NewBead{Title: "x"}, "me")
+	must(t, err)
+	must(t, d.Reconcile(ctx)) // start
+	must(t, d.Reconcile(ctx)) // seen working
+	if group, _ := claimedBy(t, s, b1.ID); group != "a" {
+		t.Fatalf("claimed by %q, want a", group)
+	}
+	p := newStandIn(t, s)
+	p.sayFor("openai", codexOpen)
+	primeGroupLimits(t, s, d, "b")
+	r.showBead(t, s, *b1, "idle", agyQuotaTail)
+	must(t, d.Reconcile(ctx))
+	until, window, model, ok := dispatch.ResetWait(handleOfBead(t, s, *b1))
+	if want := at.Add(2*time.Hour + 15*time.Minute + 47*time.Second + time.Minute); !ok || !until.Equal(want) ||
+		window != "Individual" || model != "m1" {
+		t.Fatalf("the handle's wait = %v %q %q %v, want until %v for the line's window with m1", until, window, model, ok, want)
+	}
+
+	b2 := newBead(t, s, "held model")
+	must(t, d.Reconcile(ctx))
+	if got := r.starts(); !slices.Equal(got, []string{b1.ID, b2.ID}) {
+		t.Fatalf("starts = %v, want the waiting bead started on the --else group", got)
+	}
+	group, data := claimedBy(t, s, b2.ID)
+	if group != "b" {
+		t.Fatalf("claimed by %q with %v, want b", group, data)
+	}
+	passed, _ := data["passed"].([]any)
+	if len(passed) != 1 {
+		t.Fatalf("passed = %v, want the one held group", data["passed"])
+	}
+	one, _ := passed[0].(map[string]any)
+	if one["group"] != "a" || !strings.Contains(fmt.Sprint(one["reason"]), "model m1") {
+		t.Fatalf("passed = %v, want a passed over for its model's hold", one)
 	}
 }
 

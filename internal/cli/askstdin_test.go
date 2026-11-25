@@ -83,6 +83,7 @@ func TestParseAskStdin(t *testing.T) {
 		{"a says line with no command", "Q: Go?\nC: why.\nS: action=opened event=issues -> done\n", "S: with no R: after it", false},
 		{"a makes line with no command", "Q: Go?\nC: why.\nM: action=opened event=issues -> task:new\n", "M: with no R: after it", false},
 		{"a flow line with no command", "Q: Go?\nC: why.\nF: in -> work\n", "F: with no R: after it", false},
+		{"an E: line", "Q: Go?\nC: why.\nE: spares\n", "has the label E:", true},
 		{"a command and its words", "Q: Go?\nR: up\nG: bead\n", "R: and G:", false},
 	} {
 		_, err := parseAskStdin(tc.in)
@@ -180,6 +181,21 @@ func testBeadAskStdin(t *testing.T) {
 	flowAskRun, err = askedRun(ctx, st, id, got[len(got)-1].Seq)
 	if err != nil || flowAskRun.Flow != flowText {
 		t.Fatalf("the flow set file ask carries %+v, %v", flowAskRun, err)
+	}
+
+	// A file is no prose, so --run-flow goes beside an ask on stdin as --run-role
+	// does; F: lines are the other way to carry a flow, and the two are refused
+	// together.
+	if _, err := ask("Q: Set the flow from a file?\nC: the line changes\nR: flow set code\n", id, "-", "--run-flow", flowPath); err != nil {
+		t.Fatalf("a flow set ask on stdin beside --run-flow: %v", err)
+	}
+	got = notes()
+	if flowAskRun, err = askedRun(ctx, st, id, got[len(got)-1].Seq); err != nil || flowAskRun.Flow != flowText {
+		t.Fatalf("the flow set ask on stdin beside --run-flow carries %+v, %v", flowAskRun, err)
+	}
+	if _, err := ask("Q: Set the flow?\nC: the line changes\nR: flow set code\nF: in -> done\n", id, "-", "--run-flow", flowPath); err == nil ||
+		!strings.Contains(err.Error(), "--run-flow reads a flow file and --run-flow-line gives its lines: one of the two") {
+		t.Errorf("a file and F: lines = %v", err)
 	}
 
 	// Flags that name no prose go beside it, as ever.
@@ -282,6 +298,30 @@ func TestBeadAskRunWord(t *testing.T) {
 	} {
 		if _, err := run(t, a.beadCmd(), tc.args...); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("bead ask %v = %v, want %q", tc.args, err, tc.want)
+		}
+	}
+}
+
+// The help of yardr bead ask says who may file a run ask: a crew member or a
+// user of the yard, which --actor names and does not make, and not one who
+// may run the command themselves. Without it a person learns each rule from
+// a refusal, after the ask is typed. The phrases pinned are the store's own
+// words for the two refusals and the flag's rule; the help is read as words,
+// so a reflowed paragraph passes, and the wording around them is free.
+func TestBeadAskHelpSaysWhoMayFileARunAsk(t *testing.T) {
+	t.Parallel()
+	help, _, err := (&app{}).beadCmd().Find([]string{"ask"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := strings.Join(strings.Fields(help.Long), " ")
+	for _, want := range []string{
+		"proposed by a crew member or a user of the yard",
+		"--actor only names who is asking",
+		"needs no approval: run it yourself",
+	} {
+		if !strings.Contains(words, want) {
+			t.Errorf("yardr bead ask --help does not say %q", want)
 		}
 	}
 }

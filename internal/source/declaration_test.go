@@ -138,6 +138,35 @@ func TestParseCRM(t *testing.T) {
 	}
 }
 
+func TestParseNeeds(t *testing.T) {
+	d, err := Parse("crm.yaml", []byte(crm+"needs:\n  - { program: gws, env: GWS_BIN, install: [install-gws] }\n  - { program: acme-cli, install: [/opt/acme/install, --quiet] }\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Needs) != 2 || d.Needs[0].Program != "gws" || d.Needs[0].Env != "GWS_BIN" ||
+		strings.Join(d.Needs[0].Install, " ") != "install-gws" ||
+		d.Needs[1].Program != "acme-cli" || d.Needs[1].Env != "" ||
+		strings.Join(d.Needs[1].Install, " ") != "/opt/acme/install --quiet" {
+		t.Fatalf("needs = %+v", d.Needs)
+	}
+	// Each install is one of the declaration's commands, so a relative
+	// one is carried as every command file is.
+	var keys []string
+	for _, c := range d.Commands() {
+		keys = append(keys, c.Key)
+	}
+	if !slices.Contains(keys, "needs.gws") || !slices.Contains(keys, "needs.acme-cli") {
+		t.Fatalf("commands = %v, want both needs installs among them", keys)
+	}
+	plain, err := Parse("crm.yaml", []byte(crm))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plain.Needs) != 0 || len(plain.MissingNeeds()) != 0 {
+		t.Fatalf("a declaration with no needs reads needs: %+v", plain.Needs)
+	}
+}
+
 // A file answer is the answer's bytes, not JSON: a read request call may
 // name it (with errors for a refusal, and with build beside its request as
 // any request call may), and it is refused with select, with run and on an
@@ -537,6 +566,7 @@ func TestParseBases(t *testing.T) {
 		t.Fatalf(`CheckBase("eu") without bases = %v`, err)
 	}
 	t.Run("base template", testBaseTemplate)
+	t.Run("path template", testPathTemplate)
 }
 
 // A service the operator may run on a machine of their own declares the
@@ -612,6 +642,78 @@ func testBaseTemplate(t *testing.T) {
 	// base the operator did not choose.
 	if _, err := Do(context.Background(), d.WithHost("user@crm.example.net"), "ping", nil, "tok", noSecrets); reason(err) != Refused || !strings.Contains(err.Error(), "its base is no address") {
 		t.Errorf("a call to a host the checks refuse: %v", err)
+	}
+}
+
+// A service that scopes its calls by site declares the address that site
+// fills beside its base, which stays the default: the site setting fills one
+// path segment of it, "" is the base itself, and a site is one segment and
+// nothing else. A site that makes an address a base may not be is refused in
+// the checks' words, and a site the checks refuse leaves a call no address,
+// never the base's. The filled segment is what the declaration remembers
+// (FilledSite), and the unfilled declaration remembers none, so a credential
+// is keyed to the segment only where an operator typed one.
+func testPathTemplate(t *testing.T) {
+	text := strings.Replace(crm, "base: https://crm.example.com/api/v2\n",
+		"base: https://crm.example.com/api/v2\npath_template: https://crm.example.com/ex/{site}/api/v2/\n", 1)
+	d, err := Parse("crm.yaml", []byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Base != "https://crm.example.com/api/v2" || d.PathTemplate != "https://crm.example.com/ex/{site}/api/v2" {
+		t.Fatalf("base = %q, template = %q", d.Base, d.PathTemplate)
+	}
+	if got := d.WithSite(""); got != d {
+		t.Fatalf(`WithSite("") copies the declaration`)
+	}
+	if d.FilledSite() != "" {
+		t.Fatalf("an unfilled declaration remembers the site %q", d.FilledSite())
+	}
+	at := d.WithSite("cloud-1")
+	if at == d || at.Base != "https://crm.example.com/ex/cloud-1/api/v2" || at.FilledSite() != "cloud-1" || d.Base != "https://crm.example.com/api/v2" || d.FilledSite() != "" {
+		t.Fatalf("WithSite(cloud-1) = %+v, and the declaration is %q", at, d.Base)
+	}
+	plain, err := Parse("crm.yaml", []byte(crm))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plain.WithSite("cloud-1"); got != plain {
+		t.Fatalf("WithSite of a declaration with no path template is not the declaration itself")
+	}
+	if err := plain.CheckSite("cloud-1"); err == nil || !strings.Contains(err.Error(), "names no path_template") {
+		t.Fatalf("CheckSite without a template = %v", err)
+	}
+	if err := d.CheckSite(""); err != nil {
+		t.Fatalf(`CheckSite("") = %v`, err)
+	}
+	for _, site := range []string{"cloud-1", "CLOUD_1.example~x", "10.0.0.5", "a"} {
+		if err := d.CheckSite(site); err != nil {
+			t.Errorf("CheckSite(%q) = %v", site, err)
+		}
+		if got, want := d.WithSite(site).Base, "https://crm.example.com/ex/"+site+"/api/v2"; got != want {
+			t.Errorf("WithSite(%q).Base = %q, want %q", site, got, want)
+		}
+	}
+	for site, want := range map[string]string{
+		"cloud-1/extra": "a site is one path segment",
+		"cloud-1?x=1":   "the address it makes has a query or a fragment",
+		"cloud-1#x":     "the address it makes has a query or a fragment",
+		"..":            "the address it makes has a '..', '//' or '\\' in its path",
+		".":             "the address it makes has a '..', '//' or '\\' in its path",
+		"cloud 1":       "a site is one path segment",
+		"%2f":           "the address it makes has a '..', '//' or '\\' in its path",
+		"a\\b":          "the address it makes has a '..', '//' or '\\' in its path",
+	} {
+		err := d.CheckSite(site)
+		if err == nil || !strings.Contains(err.Error(), want) || !strings.HasPrefix(err.Error(), fmt.Sprintf("source crm: site=%q: ", site)) {
+			t.Errorf("CheckSite(%q) = %v, want %q", site, err, want)
+		}
+		if got := d.WithSite(site).Base; got != "" {
+			t.Errorf("WithSite(%q).Base = %q: a site the checks refuse is no address to send to", site, got)
+		}
+	}
+	if _, err := Do(context.Background(), d.WithSite("a/b"), "ping", nil, "tok", noSecrets); reason(err) != Refused || !strings.Contains(err.Error(), "its base is no address") {
+		t.Errorf("a call to a site the checks refuse: %v", err)
 	}
 }
 
@@ -745,7 +847,47 @@ func TestParseRefuses(t *testing.T) {
 			"base_template", "want a string"},
 		{"a template and no base", with("base: https://crm.example.com/api/v2\n", "base_template: https://{host}/api/v2\n"),
 			"base", "missing: the address every call's path is under"},
+		{"a host mark in a path", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\nbase_template: https://crm.example.com/{host}/api/v2\n"),
+			"base_template", "{host} stands right after https://, as the whole host"},
+		{"a path template with no mark", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\npath_template: https://crm.example.com/ex/cloud/api/v2\n"),
+			"path_template", "want {site} once, where one path segment goes"},
+		{"a path template with the mark twice", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\npath_template: https://crm.example.com/{site}/{site}/api/v2\n"),
+			"path_template", "want {site} once, where one path segment goes"},
+		{"a path template with the mark as the host", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\npath_template: https://{site}/api/v2\n"),
+			"path_template", "{site} is one path segment, not the host"},
+		{"a path template with the mark in a segment", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\npath_template: https://crm.example.com/ex-{site}/api/v2\n"),
+			"path_template", "{site} stands alone as one path segment"},
+		{"a path template with the mark in the host", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\npath_template: https://{site}.crm.example.com/api/v2\n"),
+			"path_template", "{site} is one path segment, not the host"},
+		{"a path template over plain http", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\npath_template: http://crm.example.com/ex/{site}/api/v2\n"),
+			"path_template", "the template with a site in it is plain http to a machine that is not this one"},
+		{"a path template with a query", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\npath_template: https://crm.example.com/ex/{site}/api/v2?x=1\n"),
+			"path_template", "the template with a site in it has a query or a fragment"},
+		{"a path template with dots in its path", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\npath_template: https://crm.example.com/{site}/../v2\n"),
+			"path_template", "the template with a site in it has a '..', '//' or '\\' in its path"},
+		{"a path template that is no string", with("base: https://crm.example.com/api/v2\n", "base: https://crm.example.com/api/v2\npath_template: [https, site]\n"),
+			"path_template", "want a string"},
+		{"a path template and no base", with("base: https://crm.example.com/api/v2\n", "path_template: https://crm.example.com/ex/{site}/api/v2\n"),
+			"base", "missing: the address every call's path is under"},
 		{"no calls", "name: x\nbase: https://x.example.com\n", "calls", "missing"},
+		{"a need with no program", crm + "needs:\n  - { env: GWS_BIN, install: [install-gws] }\n",
+			"needs.0.program", "missing: the program the source needs"},
+		{"a need with no install", crm + "needs:\n  - { program: gws }\n",
+			"needs.0.install", "missing: the install that gets the program"},
+		{"a need whose env is no variable name", crm + "needs:\n  - { program: gws, env: \"not a name\", install: [install-gws] }\n",
+			"needs.0.env", "is no name of a variable"},
+		{"a need named twice", crm + "needs:\n  - { program: gws, install: [install-gws] }\n  - { program: gws, install: [other] }\n",
+			"needs.1", "program gws is named twice"},
+		{"needs that is no list", crm + "needs: gws\n",
+			"needs", "want a list of the programs"},
+		{"a need with an empty install", crm + "needs:\n  - { program: gws, install: [] }\n",
+			"needs.0.install", "an empty list"},
+		{"a need whose program has spaces", crm + "needs:\n  - { program: \"my tool\", install: [install-gws] }\n",
+			"needs.0.program", "one word, on one line"},
+		{"a need whose program is a path", crm + "needs:\n  - { program: /usr/bin/gws, install: [install-gws] }\n",
+			"needs.0.program", "name the program on PATH"},
+		{"an empty needs list", crm + "needs: []\n",
+			"needs", "no program"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d, err := Parse("crm.yaml", []byte(tc.text))
@@ -1014,6 +1156,7 @@ func TestParseLimitsRefusals(t *testing.T) {
 		"a base and no calls":             {"name: q\nbase: https://q.example.com\n" + limits(cmd + kinds)[len("name: q\n"):], "f:2: base: is for the calls of a source, and this file declares none"},
 		"region bases and no calls":       {"name: q\nbases:\n  eu: https://eu.q.example.com\n" + limits(cmd + kinds)[len("name: q\n"):], "f:2: bases: is for the calls of a source, and this file declares none"},
 		"a base_template and no calls":    {"name: q\nbase_template: https://{host}/v1\n" + limits(cmd + kinds)[len("name: q\n"):], "f:2: base_template: is for the calls of a source, and this file declares none"},
+		"a path_template and no calls":    {"name: q\npath_template: https://q.example.com/ex/{site}/v1\n" + limits(cmd + kinds)[len("name: q\n"):], "f:2: path_template: is for the calls of a source, and this file declares none"},
 		"a credential and no calls":       {"name: q\ncredential: { env: Q }\n" + limits(cmd + kinds)[len("name: q\n"):], "f:2: credential: is for the calls of a source"},
 		"neither calls nor limits":        {"name: q\n", "calls: missing: a source is the calls it declares, or its limits command"},
 		"calls, limits and no base":       {strings.Replace(pushover, "base: https://api.pushover.net/1\n", "", 1) + "limits:\n" + cmd + kinds, "base: missing: the address every call's path is under"},
@@ -1198,7 +1341,11 @@ func TestParseCredentialMintSecretFalse(t *testing.T) {
 		},
 		"unknown key": {
 			strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]", "mint: [{ name: CRM_APP_KEY, secret: false, extra: 1 }]", 1),
-			"unknown key (known here: name, secret)",
+			"unknown key (known here: name, secret, bound)",
+		},
+		"bound no boolean": {
+			strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]", "mint: [{ name: CRM_APP_KEY, bound: sometimes }]", 1),
+			"want true or false",
 		},
 		"a name twice across forms": {
 			strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]", "mint: [CRM_APP_ID, { name: CRM_APP_ID, secret: false }]", 1),
@@ -1213,6 +1360,162 @@ func TestParseCredentialMintSecretFalse(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
 		}
+	}
+	// Bound beside secret: the input belongs to one holder. The flow and
+	// block forms read the same, and bound false binds nothing.
+	boundFlow := strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]",
+		"mint:\n    - CRM_APP_ID\n    - { name: CRM_APP_KEY, secret: false, bound: true }", 1)
+	fd, err := Parse("crm.yaml", []byte(boundFlow))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(fd.Credential.Bound, ",") != "CRM_APP_KEY" || strings.Join(fd.Credential.NotSecret, ",") != "CRM_APP_KEY" {
+		t.Fatalf("bound flow form reads as %+v", fd.Credential)
+	}
+	boundBlock := strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]",
+		"mint:\n    - CRM_APP_ID\n    - name: CRM_APP_KEY\n      secret: false\n      bound: true", 1)
+	kd, err := Parse("crm.yaml", []byte(boundBlock))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(kd.Credential.Bound, ",") != "CRM_APP_KEY" {
+		t.Fatalf("bound block form reads as %+v", kd.Credential)
+	}
+	unbound := strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]",
+		"mint: [{ name: CRM_APP_KEY, secret: false, bound: false }]", 1)
+	ud, err := Parse("crm.yaml", []byte(unbound))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ud.Credential.Bound) != 0 || len(d.Credential.Bound) != 0 {
+		t.Fatalf("bound false or absent binds: %+v, %+v", ud.Credential, d.Credential)
+	}
+}
+
+// A credential names the scopes the hosted mint must see granted under
+// mint_scopes, beside mint and mint_command: whole scope strings, in
+// file order, matched exactly. What is refused is no list, no scope, a
+// blank or spaced scope and one twice; a file without the key declares
+// none, and the hosted account is its one no-secret mint input alone.
+func TestParseCredentialMintScopes(t *testing.T) {
+	scoped := strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]",
+		"mint: [CRM_APP_ID, CRM_APP_KEY]\n  mint_scopes: [https://crm.example.com/read, https://crm.example.com/write]", 1)
+	d, err := Parse("crm.yaml", []byte(scoped))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"https://crm.example.com/read", "https://crm.example.com/write"}
+	if !slices.Equal(d.Credential.MintScopes, want) {
+		t.Fatalf("mint_scopes = %q, want %q", d.Credential.MintScopes, want)
+	}
+	blocked := strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]",
+		"mint: [CRM_APP_ID, CRM_APP_KEY]\n  mint_scopes:\n    - https://crm.example.com/read\n    - https://crm.example.com/write", 1)
+	bd, err := Parse("crm.yaml", []byte(blocked))
+	if err != nil || !slices.Equal(bd.Credential.MintScopes, want) {
+		t.Fatalf("the block form reads as %q, %v", bd.Credential.MintScopes, err)
+	}
+	raw, err := json.Marshal(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var again Declaration
+	if err := json.Unmarshal(raw, &again); err != nil || !slices.Equal(again.Credential.MintScopes, want) {
+		t.Fatalf("round trip = %+v, %v", again.Credential, err)
+	}
+	plain, err := Parse("crm.yaml", []byte(minted))
+	if err != nil || len(plain.Credential.MintScopes) != 0 {
+		t.Fatalf("a file without mint_scopes = %+v, %v", plain.Credential, err)
+	}
+	for name, tc := range map[string]struct{ text, want string }{
+		"no list":   {strings.Replace(scoped, "mint_scopes: [https://crm.example.com/read, https://crm.example.com/write]", "mint_scopes: https://crm.example.com/read", 1), "credential.mint_scopes: want a list of scope strings"},
+		"no scope":  {strings.Replace(scoped, "mint_scopes: [https://crm.example.com/read, https://crm.example.com/write]", "mint_scopes: []", 1), "credential.mint_scopes: no scope"},
+		"blank":     {strings.Replace(scoped, "https://crm.example.com/write", `" "`, 1), "credential.mint_scopes: scope \" \" holds a space"},
+		"spaced":    {strings.Replace(scoped, "https://crm.example.com/write", `"two words"`, 1), "credential.mint_scopes: scope \"two words\" holds a space"},
+		"twice":     {strings.Replace(scoped, "https://crm.example.com/write", "https://crm.example.com/read", 1), "credential.mint_scopes: scope https://crm.example.com/read is listed twice"},
+		"no string": {strings.Replace(scoped, "https://crm.example.com/write", "7", 1), "credential.mint_scopes: want a string"},
+	} {
+		_, err := Parse("f", []byte(tc.text))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
+		}
+	}
+	// The hosted account input is the one mint input marked no secret.
+	account := strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]",
+		"mint:\n    - CRM_APP_ID\n    - { name: CRM_APP_KEY, secret: false }", 1)
+	ad, err := Parse("crm.yaml", []byte(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name, ok := ad.Credential.HostedAccountInput(); !ok || name != "CRM_APP_KEY" {
+		t.Fatalf("the hosted account input = %q, %v", name, ok)
+	}
+	if _, ok := plain.Credential.HostedAccountInput(); ok {
+		t.Error("a file with no no-secret input names a hosted account")
+	}
+	two := strings.Replace(minted, "mint: [CRM_APP_ID, CRM_APP_KEY]",
+		"mint:\n    - { name: CRM_APP_ID, secret: false }\n    - { name: CRM_APP_KEY, secret: false }", 1)
+	td, err := Parse("crm.yaml", []byte(two))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := td.Credential.HostedAccountInput(); ok {
+		t.Error("a file with two no-secret inputs names a hosted account")
+	}
+	if _, ok := (*Credential)(nil).HostedAccountInput(); ok {
+		t.Error("a file with no credential names a hosted account")
+	}
+}
+
+// A credential may word its own sign-in: the shell lines that make the
+// login, in order, and what to paste where. What is refused is a key
+// the map does not know, either half missing, no line at all, a line
+// that is not one line, and steps beside a credential that is its
+// address. A file without them keeps a nil Login.
+func TestParseCredentialLogin(t *testing.T) {
+	withLogin := strings.Replace(crm, `  header: "Authorization: Bearer {credential}"`,
+		"  header: \"Authorization: Bearer {credential}\"\n  login:\n    run: [crm auth login, crm auth export]\n    paste: paste the export into the sign-in card for this account", 1)
+	d, err := Parse("crm.yaml", []byte(withLogin))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Credential.Login == nil || strings.Join(d.Credential.Login.Run, ",") != "crm auth login,crm auth export" ||
+		d.Credential.Login.Paste != "paste the export into the sign-in card for this account" {
+		t.Fatalf("login = %+v", d.Credential.Login)
+	}
+	raw, err := json.Marshal(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var again Declaration
+	if err := json.Unmarshal(raw, &again); err != nil || again.Credential.Login == nil ||
+		again.Credential.Login.Paste != d.Credential.Login.Paste {
+		t.Fatalf("round trip = %+v, %v", again.Credential, err)
+	}
+	plain, err := Parse("crm.yaml", []byte(crm))
+	if err != nil || plain.Credential.Login != nil {
+		t.Fatalf("a file without login = %+v, %v", plain.Credential, err)
+	}
+	for name, tc := range map[string]struct{ text, want string }{
+		"unknown login key":                   {strings.Replace(withLogin, "    paste:", "    past:", 1), "credential.login.past: unknown key (known here: run, paste)"},
+		"unknown credential key beside login": {strings.Replace(withLogin, "  login:", "  logn:", 1), "credential.logn: unknown key"},
+		"no run":                              {strings.Replace(withLogin, "    run: [crm auth login, crm auth export]\n", "", 1), "credential.login.run: missing: the shell lines"},
+		"no paste":                            {strings.Replace(withLogin, "    paste: paste the export into the sign-in card for this account\n", "", 1), "credential.login.paste: missing: what to paste where"},
+		"empty run":                           {strings.Replace(withLogin, "run: [crm auth login, crm auth export]", "run: []", 1), "credential.login.run: want a list of one or more"},
+		"run no list":                         {strings.Replace(withLogin, "run: [crm auth login, crm auth export]", "run: crm auth login", 1), "credential.login.run: want a list of one or more"},
+		"paste two lines": {strings.Replace(withLogin, "paste the export into the sign-in card for this account",
+			`"paste the export\ninto the card"`, 1), "credential.login.paste: what to paste is one non-blank line"},
+		"run line two lines": {strings.Replace(withLogin, "crm auth login", `"crm auth\nlogin"`, 1), "credential.login.run: a sign-in line is one non-blank line"},
+		"blank paste":        {strings.Replace(withLogin, "paste the export into the sign-in card for this account", `"   "`, 1), "credential.login.paste: what to paste is one non-blank line"},
+		"blank run line":     {strings.Replace(withLogin, "crm auth login", `"   "`, 1), "credential.login.run: a sign-in line is one non-blank line"},
+	} {
+		_, err := Parse("f", []byte(tc.text))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
+		}
+	}
+	urlLogin := "name: hook\ncredential:\n  env: HOOK_URL\n  url: true\n  login: { run: [hook login], paste: paste it }\ncalls:\n  send: { kind: update, request: { method: POST } }\n"
+	if _, err := Parse("f", []byte(urlLogin)); err == nil || !strings.Contains(err.Error(), "is not given sign-in steps") {
+		t.Errorf("login beside url: err = %v", err)
 	}
 }
 

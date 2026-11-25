@@ -487,8 +487,9 @@ func TestDelegatedRefusals(t *testing.T) {
 		"group kimi auto preset": {func() error {
 			return setGroup(map[string]any{"kind": "kimi", "args": []any{"--auto"}})
 		}, "preset auto skips the agent's permission prompts"},
-		"the yardmaster's own":       {func() error { return setCrew("yardmaster", map[string]any{"kind": "codex"}) }, "change kind on crew member yardmaster"},
-		"the yardmaster's own model": {func() error { return setCrew("yardmaster", map[string]any{"model": "opus"}) }, "change model on crew member yardmaster"},
+		"the yardmaster's own":                {func() error { return setCrew("yardmaster", map[string]any{"kind": "codex"}) }, "change kind on crew member yardmaster"},
+		"the yardmaster's own model":          {func() error { return setCrew("yardmaster", map[string]any{"model": "opus"}) }, "change model on crew member yardmaster"},
+		"the yardmaster's own fallback_model": {func() error { return setCrew("yardmaster", map[string]any{"fallback_model": "opus"}) }, "change fallback_model on crew member yardmaster"},
 		"the yardmaster's own dir": {func() error {
 			r, err := y.api.GetCrew(y.ctx, "yardmaster")
 			if err != nil {
@@ -569,7 +570,16 @@ func TestDelegatedRefusals(t *testing.T) {
 			cases["group "+kind+" "+p.Label] = struct {
 				run  func() error
 				want string
-			}{func() error { return setGroup(map[string]any{"kind": kind, "args": args}) }, want}
+			}{func() error {
+				edit := store.GroupEdit{Set: map[string]any{"kind": kind, "args": args}}
+				if store.HarnessNoModelFlag[kind] {
+					// The group holds a model, which this kind takes no
+					// flag for; the leg carries the unset, as it does model.
+					edit.Unset = []string{"model"}
+				}
+				_, err := y.api.SetGroup(ctx, "builders", edit, "yardmaster")
+				return err
+			}, want}
 			cases["crew "+kind+" "+p.Label] = struct {
 				run  func() error
 				want string
@@ -743,7 +753,6 @@ func TestDelegationSkipsCardWeight(t *testing.T) {
 		{[]string{"group", "add", "reviewers", "--runner", "herdr", "--set", "kind=codex"}, "", store.WeightCode},
 		{[]string{"hook", "add", "tracker", "--source", "linear"}, "", store.WeightTrust},
 		{[]string{"depot", "test", "shed"}, "sh .yardr/test", store.WeightCode},
-		{[]string{"depot", "base", "shed", "origin/trunk"}, "", ""},
 	}
 	for _, s := range skipped {
 		seq, err := y.api.AddAsk(y.ctx, b.ID, store.Ask{Question: "may I?", To: "jo", Context: []string{"a card of today's"}, Run: &store.AskRun{Argv: s.run, Test: s.test}}, "ada")

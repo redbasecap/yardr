@@ -169,7 +169,7 @@ Not for a pack, whatever it happens to do today:
 | seam | | |
 |---|---|---|
 | every key of `pack.yaml` that the [table](packs.md#packyaml) lists, `api` among them, and what a pack is [refused for](packs.md#what-a-pack-is-refused-for) | stable | |
-| every key of a declaration that [`packs/template/acme.yaml`](../packs/template/acme.yaml) shows, and the keys under them that [integrations.md](integrations.md#a-declared-source) gives. A pack for a depot brings `name`, `about`, `base`, `bases`, `base_template`, `credential`, `check`, `idempotency`, `calls` and `notify`, and a pack of kind `source` also `hear`, `hook`, `thread`, `link`, `identity` and `events` | stable | `limits` is not one: a pack may not bring it. `git` is not one either: a pack of kind `source` may carry it (the github pack does), and this page does not promise it |
+| every key of a declaration that [`packs/template/acme.yaml`](../packs/template/acme.yaml) shows, and the keys under them that [integrations.md](integrations.md#a-declared-source) gives. A pack for a depot brings `name`, `about`, `base`, `bases`, `base_template`, `path_template`, `credential`, `check`, `idempotency`, `calls` and `notify`, and a pack of kind `source` also `hear`, `hook`, `thread`, `link`, `identity`, `events` and `needs` | stable | `limits` is not one: a pack may not bring it. `git` is not one either: a pack of kind `source` may carry it (the github pack does), and this page does not promise it |
 | the placeholders `{{operator}}` and `{{<crew member>}}` in a role or stage file | stable | any other `{{...}}` there is refused |
 | a role, script, stage file, setup file, frame or declaration is a path relative to the pack's directory, inside it, to a regular file. A command program is a file beside its declaration, inside the pack | stable | |
 | the frame (API 4): `frame: <file>` at the root of `pack.yaml`, one HTML file of at most 256 KiB with one `<title>` element in its head, one `<!--yardr:title-->` where the page's title block stands in its body and one `<!--yardr:content-->` where the page's content stands, each a comment of its own that a browser reads as a comment, and neither in the head, a `<script>`, a `<style>`, a `<template>`, a tag, nor where the title or the content could not stand | stable | what else is in the frame, its class names, its tokens and its script, is its author's: yardr holds the two markers and the `<title>`, nothing more. A pack of kind `source` carries no frame, and a frame's path is no other file's of the pack. The frame is copied as it stands, never filled in, and is no program |
@@ -227,6 +227,23 @@ pack. yardr runs one without a shell, for one job, and stops it after 30 s.
 | which directory it is | internal | |
 | a command's stderr | internal | the error of a command that fails ends with it |
 | a `thread.*` command that exits 3 | internal | it refuses for good what it was asked, so the yard does not try again: a stage map's move that gets it is skipped at once, as `failed`. After any other failure the move is tried again |
+
+A declaration's `needs` names the programs its commands need on the
+machine, each as `{program, env, install}`: the program, the variable
+that may name another path to it (checked first, as `GWS_BIN` names
+another gws), and the install that gets it, an argv run without a
+shell. A relative install program is a file beside the declaration,
+carried and hashed as every command file is; an absolute one is the
+operator's own and runs in a terminal alone. The yard installs
+nothing by itself: `yardr doctor` and a pack's setup card name what
+is missing with the command that installs it, and `yardr pack
+install <pack>` runs the installs, in a terminal directly or on a
+run card that shows each install file whole with its sha256 and runs
+exactly those bytes when the operator approves. An install runs with
+no credential, stdin closed and no pack directory as its working
+directory, for at most 15 minutes, and counts only where the program
+stands after; one file branches on `uname` itself, since `needs` has
+no per-platform keys.
 
 ## The commands a script runs
 
@@ -363,6 +380,45 @@ presets. Nothing is granted until the operator grants it, at an ask or with
 | a process of its own that keeps running | not offered | |
 | state of its own | not offered | a pack keeps what it must remember on beads, with `bead update --meta`, notes and links |
 
+A mint input written as a mapping (`- name: <variable>`) takes `secret`
+and `bound` beside the name. `secret: false` marks a value that is no
+secret, such as an account address, and is drawn in the clear.
+`bound: true` binds the value to one holder across the whole yard —
+the yard in any source's own file, or one user in theirs — and the yard
+refuses that value for any other holder, when it is given and when a
+call made as a user reads it. The binding is by name across the yard:
+once any source marks a name bound, every source that mints with that
+name is held to it, one that leaves the name unbound included, so
+installing a pack that marks a name protects the other sources that
+mint with it from then on, and taking the last bound marking of a
+name away (the declaration writes are the operator's, as every source
+write is) ends the protection everywhere. A name no source marks
+bound is never held, however widely its value is shared. Both are read for every pack, as every key of a declaration is
+([A declaration added by hand](#a-declaration-added-by-hand)): a
+declaration carries no API number of its own.
+
+A credential may name `mint_scopes` beside `mint` and `mint_command`:
+the scopes the hosted edge mint must see granted before the token is
+held, each spelled whole as the service names it and matched exactly
+against the connection's grant, in declaration order. A source that
+names none is not served by the hosted mint. The hosted mint takes its
+account from the declaration's one mint input marked `secret: false`;
+a declaration with no such input, or with more than one, names no
+account to mint for. It is read for every pack the same way, as every
+key of a declaration is.
+
+A credential may name its pack's sign-in under `login`: `run`, the
+shell lines a person runs on their own machine to make the login, in
+order, and `paste`, the one line that says what to paste into which
+card. The setup card shows them at its account step and a secret card
+for the same credential shows them above its field, marked as the
+pack's and as shown only: the yard never runs them, and the value
+still travels the secret path alone, so no new transport comes with
+them. A credential without `login` shows neither card any differently.
+It is read for every pack the same way, as every key of a declaration
+is, and refused beside `credential.url: true`, whose credential is
+its address and signs nobody in.
+
 ## What each number added
 
 The last heading here is the highest API this yardr reads.
@@ -423,6 +479,19 @@ path (`signature: { body: token }`), compared in constant time as written.
 The field is removed before the normalize command receives the body and
 before the body is stored or hashed for deduplication. A pack whose
 declaration names it says `api: 7`.
+
+### API 8
+
+The `file` key under a call's `answer` (`answer: { file: true }`) on a
+read call that sends a request: its answer is a file's bytes, not JSON.
+The yard downloads it under its `blob_max_bytes` bound, keeps it as a
+blob, and `yardr call` writes it into the call's working directory. A
+file call is granted by its name alone, as an update is, and is marked
+`(file)` wherever a call is listed, beside `(update)`. `yardr call
+--json` of one prints `{"file":{"name","bytes"}}` (the name actually
+written, and how many bytes it holds), and `yardr call --note` notes the
+marking line and the file line, with no bytes. A pack whose declaration
+declares a file call says `api: 8`.
 
 ## Left out
 

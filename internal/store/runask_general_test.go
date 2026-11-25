@@ -8,8 +8,9 @@ import (
 	"time"
 )
 
-// generalYard is a list yard with general cards on, turned on by the
-// operator in a terminal as the setting requires.
+// generalYard is a list yard with general cards on, set true by the
+// operator in a terminal (they stand true unset, since the default
+// flipped; this yard pins the set value).
 func generalYard(t *testing.T) *askYard {
 	t.Helper()
 	y := listYard(t)
@@ -42,6 +43,10 @@ func TestGeneralAskRefusals(t *testing.T) {
 		want  string
 	}{
 		{[]string{"peer", "allow", "airy", "--mail-limit", "300"}, "the specific card is the only door"},
+		{[]string{"source", "set", "crm", "base="}, "the specific card is the only door"},
+		{[]string{"source", "set", "crm", "base=eu"}, "the specific card is the only door"},
+		{[]string{"source", "set", "crm", "host=crm.example.net"}, "the specific card is the only door"},
+		{[]string{"settings", "set", "hook_public_url", "https://yard.example/my", "hooks"}, "the specific card is the only door"},
 		{[]string{"group", "add", "g3", "--runner", "manual"}, "the specific card is the only door"},
 		{[]string{"bead", "answer", "yardr-x", "1"}, "never carried"},
 		{[]string{"bead", "answer"}, "never carried"},
@@ -111,9 +116,30 @@ func TestGeneralAskRefusals(t *testing.T) {
 		Run: &AskRun{General: []string{"bead", "create", "x"}}}, "yardmaster", "to approve")
 }
 
+// deletedCards is one set of words for each command whose card of its
+// own was deleted: the command lives on at a terminal, and rides the
+// general card.
+var deletedCards = [][]string{
+	{"group", "rename", "builders", "makers"},
+	{"route", "add", "--stage", "review", "--group", "reviewers", "--depot", "web"},
+	{"route", "set", "r1", "--group", "reviewers"},
+	{"crew", "identity", "yardmaster", "--source", "crm", "--id", "u1", "--key", "boss"},
+	{"source", "ignore", "talk", "--rm", "U999"},
+	{"user", "device", "rm", "ada", "phone"},
+	{"bead", "update", "yardr-1", "--originator", "ada"},
+	{"crew", "restart", "yardmaster", "--for", "ada"},
+	{"depot", "base", "web", "origin/other"},
+	{"link", "move", "--from-source", "linear", "--to-source", "lin-new"},
+	{"source", "rm", "crm"},
+	{"timer", "rm", "t1"},
+	{"user", "rm", "ada"},
+}
+
 // What no row carries, in a form its row refuses, files as a general
 // card with the words whole: an Askable key the specific card cannot
 // hold, free group and crew keys, and text the character walk refuses.
+// So do the commands whose own card was deleted: --run takes them as no
+// command of the list, and the same words file general.
 func TestGeneralAskFiles(t *testing.T) {
 	t.Parallel()
 	y := generalYard(t)
@@ -121,7 +147,6 @@ func TestGeneralAskFiles(t *testing.T) {
 		name  string
 		words []string
 	}{
-		{"an Askable key with a spaced value", []string{"settings", "set", "hook_public_url", "https://yard.example/my", "hooks"}},
 		{"an Askable key with a ? value", []string{"settings", "set", "hook_public_url", "https://yard.example/hooks?x=1"}},
 		{"an Askable key set empty in one word", []string{"settings", "set", "hook_public_url="}},
 		{"a bead title with a ?", []string{"bead", "create", "Fix", "the", "?", "bug"}},
@@ -131,7 +156,6 @@ func TestGeneralAskFiles(t *testing.T) {
 		{"group unset of its command", []string{"group", "set", "builders", "--unset", "cmd"}},
 		{"group runner exec", []string{"group", "set", "builders", "runner=exec"}},
 		{"crew env_command", []string{"crew", "add", "jo2", "--set", "env_command=make env"}},
-		{"a source base set empty", []string{"source", "set", "crm", "base="}},
 		{"an absolute file word", []string{"group", "set", "builders", "log=/tmp/x.log"}},
 		{"literal mail text", []string{"mail", "ada", "hello there"}},
 	} {
@@ -153,6 +177,16 @@ func TestGeneralAskFiles(t *testing.T) {
 	seq = y.ask(t, generalAsk("yardr", "bead", "create", "Hello"), "yardmaster")
 	if run := y.asked(t, seq).Ask.Run; !slices.Equal(run.General, []string{"bead", "create", "Hello"}) {
 		t.Errorf("a leading yardr stores %v", run.General)
+	}
+	for _, words := range deletedCards {
+		if _, err := y.AddAsk(y.ctx, y.bead, listAsk("mckean", words...), "yardmaster"); err == nil || !strings.Contains(err.Error(), "--run takes a command of the list") {
+			t.Errorf("--run %q = %v, want it refused as no command of the list", words, err)
+		}
+		seq := y.ask(t, generalAsk(words...), "yardmaster")
+		run := y.asked(t, seq).Ask.Run
+		if !slices.Equal(run.General, words) || !slices.Equal(run.Argv, words) || run.Description != generalDescription {
+			t.Errorf("%q files argv %v general %v, want the words whole as both", words, run.Argv, run.General)
+		}
 	}
 }
 
@@ -412,12 +446,21 @@ func TestGeneralStrippedRefused(t *testing.T) {
 	}
 }
 
-// With the setting off, or filed by anyone but the yardmaster, a
-// general card is refused before its words are read.
+// Unset, general cards stand on and a fresh yard files one; a yard
+// the operator turned off in a terminal refuses with the turned-off
+// words, and anyone but the yardmaster is refused, each before its
+// words are read.
 func TestGeneralAskGates(t *testing.T) {
 	t.Parallel()
+	fresh := listYard(t)
+	if seq := fresh.ask(t, generalAsk("bead", "create", "x"), "yardmaster"); fresh.asked(t, seq).Ask.Run == nil {
+		t.Error("a fresh yard with nothing set filed no general card")
+	}
 	off := listYard(t)
-	generalRefused(t, off, generalAsk("bead", "create", "x"), "yardmaster", "are off")
+	if err := off.SetSetting(off.ctx, GeneralCardsSetting, "false", "mckean"); err != nil {
+		t.Fatal(err)
+	}
+	generalRefused(t, off, generalAsk("bead", "create", "x"), "yardmaster", "turned them off")
 	y := generalYard(t)
 	if _, err := y.PutCrew(y.ctx, CrewMember{Name: "helper", Runner: "herdr", Dir: "/yard"}, "mckean"); err != nil {
 		t.Fatal(err)

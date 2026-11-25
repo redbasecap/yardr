@@ -54,7 +54,7 @@ func TestSubscribeMatrixShowsTheClassAsOneRow(t *testing.T) {
 
 	// With a depot beside it the class is one depot's: a row of its own,
 	// which does not stand for hearing the kinds yard-wide.
-	if err := st.PutDepot(ctx, store.Depot{Name: "web", Base: "main"}, "me"); err != nil {
+	if err := st.PutDepot(ctx, store.Depot{Name: "web", Base: "main"}, "jo"); err != nil {
 		t.Fatal(err)
 	}
 	mustAs(t, st, "jo", "subscribe", "clerk", "yardr", "--where", "depot=web", "--where", "kind=attention")
@@ -82,6 +82,14 @@ func TestSubscribeMatrixShowsTheClassAsOneRow(t *testing.T) {
 		if !slices.Contains(knownKinds, k) {
 			t.Errorf("%s is not offered in the crew form: %v", k, knownKinds)
 		}
+	}
+	// flap_held is of the class: a thread the flap guard holds makes no
+	// bead, and its genuine reopens are held with it (yardr-1vxy).
+	if !slices.Contains(want, "flap_held") {
+		t.Errorf("flap_held is not of the class attention: %v", store.AttentionKinds)
+	}
+	if !slices.Contains(knownKinds, "flap_held") {
+		t.Errorf("flap_held is not offered in the crew form: %v", knownKinds)
 	}
 	if !slices.Equal(m.ReachesNoOne, want) || !strings.Contains(text, "): "+strings.Join(want, ", ")+"\n") ||
 		!strings.Contains(text, "yardr all depot=web kind=attention ") {
@@ -129,7 +137,7 @@ func TestDoctorNotesACopiedDefaultOn(t *testing.T) {
 	}
 	early, today := state.CopiedOn[0], state.CopiedOn[1]
 	for _, want := range []string{"crew member early has a copy of an earlier default --on",
-		"It does not hear stranded, session_idle, session_aged, session_stalled, session_harness_error, session_harness_dialog, session_model_mismatch, session_prompt_gave_up, move_refused, make_refused, held, waited, nudge_held, backup_failed, note_untold, install_failed, rolled_back, hook_quiet, quiet_failed, base_diverged, rounds_reached, folded, fold_refused. ",
+		"It does not hear stranded, session_idle, session_aged, session_stalled, session_harness_error, session_harness_dialog, session_model_mismatch, session_prompt_gave_up, move_refused, make_refused, flap_held, held, waited, nudge_held, backup_failed, note_untold, install_failed, rolled_back, hook_quiet, quiet_failed, base_diverged, rounds_reached, folded, fold_refused. ",
 		" crew set early --on attention,peer_bead_arrived"} {
 		if !strings.Contains(early, want) {
 			t.Errorf("the note for early lacks %q:\n%s", want, early)

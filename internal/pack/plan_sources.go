@@ -109,7 +109,7 @@ func (b *planner) declared() error {
 		decl := d.Declaration
 		dp := DeclaredPlan{Source: d.Name, File: d.File, Base: decl.Address(), Calls: []string{}, Needs: []Need{}}
 		for _, c := range decl.Calls {
-			dp.Calls = append(dp.Calls, c.Name+" ("+c.Kind+")")
+			dp.Calls = append(dp.Calls, c.Name+" ("+callWord(c)+")")
 			dp.Warnings = append(dp.Warnings, c.SelectWarnings()...)
 		}
 		commands, err := b.sourceCommands(d)
@@ -423,6 +423,8 @@ func (b *planner) calls() error {
 				if decl != nil && !exists {
 					if call, exists = decl.Call(w); exists && call.Kind == source.Update {
 						c.Updates = append(c.Updates, w)
+					} else if exists && call.Answer.File {
+						c.Files = append(c.Files, w)
 					}
 				}
 				switch {
@@ -472,10 +474,16 @@ func (b *planner) sourceAfter(name string) (decl *source.Declaration, envFile, m
 }
 
 // declarationDiff is what the declaration now changes of the one the yard
-// has, was: where calls go, what they send the credential in, each call, and
-// the keys the yard hears and speaks through (hear, thread, link and hook),
-// each whole. was is nil for one this build does not read. Empty when the two
-// declare the same of all that: the caller says what that means.
+// has, was: where calls go, what they send the credential in and every key
+// of the credential that alters a call (the scopes the hosted mint must see
+// granted, the command a mint runs, the mint inputs one holder keeps, the
+// mint inputs marked no secret, where the hosted mint finds the account it
+// mints for, and whether a path may carry the credential), each call, and the
+// keys the yard hears and speaks through (hear, thread, link and hook), each
+// whole. The credential's login (a setup card's words) is not among them:
+// nothing reads it when a call is made. was is nil for one this build does
+// not read. Empty when the two declare the same of all that: the caller says
+// what that means.
 func declarationDiff(was, now *source.Declaration) []Diff {
 	var out []Diff
 	if was == nil {
@@ -494,6 +502,36 @@ func declarationDiff(was, now *source.Declaration) []Diff {
 		}
 		return out
 	}
+	// The credential's other keys that alter a call each stand as a line of
+	// their own, beside the credential's, so that none hides in the line that
+	// says only that the text differs: a scope the pack adds is one more the
+	// hosted mint must see granted before it holds a token, a mint command
+	// is a program that runs with a person's login, the bound inputs are the
+	// ones one holder keeps, the one input marked no secret is the account
+	// the hosted mint mints for (Credential.HostedAccountInput, read when a
+	// call is made), so a mark that moves re-points the account and a second
+	// mark, or none, makes that mint refuse, and in_path puts the credential
+	// in the logs of every server a call passes. The login stays out: it is
+	// a setup card's words and no call reads it. None, absent or empty,
+	// reads as no value.
+	credentialKey := func(of func(*source.Credential) string) func(*source.Declaration) string {
+		return func(d *source.Declaration) string {
+			if d.Credential == nil {
+				return ""
+			}
+			return of(d.Credential)
+		}
+	}
+	mintScopes := credentialKey(func(c *source.Credential) string { return strings.Join(c.MintScopes, ", ") })
+	mintCommand := credentialKey(func(c *source.Credential) string { return strings.Join(c.MintCommand, " ") })
+	bound := credentialKey(func(c *source.Credential) string { return strings.Join(c.Bound, ", ") })
+	notSecret := credentialKey(func(c *source.Credential) string { return strings.Join(c.NotSecret, ", ") })
+	inPath := credentialKey(func(c *source.Credential) string {
+		if c.InPath {
+			return "true"
+		}
+		return ""
+	})
 	notify := func(d *source.Declaration) string {
 		if d.Notify == nil {
 			return ""
@@ -509,9 +547,11 @@ func declarationDiff(was, now *source.Declaration) []Diff {
 		text, _ := json.Marshal(d.Bases) // a map of strings always marshals
 		return string(text)
 	}
-	line := func(c *source.Call) string { return "(" + c.Kind + ") " + c.Line() }
+	line := func(c *source.Call) string { return "(" + callWord(*c) + ") " + c.Line() }
 	for _, f := range []struct{ field, old, new string }{
-		{"base", was.Address(), now.Address()}, {"bases", bases(was), bases(now)}, {"base_template", was.BaseTemplate, now.BaseTemplate}, {"credential", credential(was), credential(now)}, {"check", was.Check, now.Check}, {"idempotency", was.Idempotency, now.Idempotency}, {"notify", notify(was), notify(now)},
+		{"base", was.Address(), now.Address()}, {"bases", bases(was), bases(now)}, {"base_template", was.BaseTemplate, now.BaseTemplate}, {"path_template", was.PathTemplate, now.PathTemplate}, {"credential", credential(was), credential(now)},
+		{"mint_scopes", mintScopes(was), mintScopes(now)}, {"mint_command", mintCommand(was), mintCommand(now)}, {"bound", bound(was), bound(now)}, {"not_secret", notSecret(was), notSecret(now)}, {"in_path", inPath(was), inPath(now)},
+		{"check", was.Check, now.Check}, {"idempotency", was.Idempotency, now.Idempotency}, {"notify", notify(was), notify(now)},
 		{"hear", keyValue(was.Hear), keyValue(now.Hear)}, {"thread", keyValue(was.Thread), keyValue(now.Thread)}, {"link", keyValue(was.Link), keyValue(now.Link)}, {"hook", keyValue(was.Hook), keyValue(now.Hook)},
 	} {
 		if f.old != f.new {
@@ -570,6 +610,16 @@ func inDepot(depot string) string {
 		return "the yard"
 	}
 	return "depot " + depot
+}
+
+// callWord is a call's kind as a plan names it: "file" for a call that
+// answers with a file, which its lists mark apart as they mark an
+// update, else its declared kind.
+func callWord(c source.Call) string {
+	if c.Answer.File {
+		return "file"
+	}
+	return c.Kind
 }
 
 // mapName is what a plan calls the stage map on hook, acted on as crew member.

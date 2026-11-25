@@ -417,8 +417,9 @@ for security alone, and `done-safe` sends it straight to `approved`
 ([line.md](line.md#then-once-more-for-security-alone)); the starter pack's
 default flow has the same two, except both end in `clear`: `done` goes
 through `review-security` and `done-safe` past it, and the bead waits there
-for the person's yes before it is landed from `approved`. Which one a
-reviewer reports is its judgment,
+for the person's yes before it is landed from `approved`; and the contributors
+pack's `issue` flow has them as depot yardr's does, both ending in
+`approved`. Which one a reviewer reports is its judgment,
 by the list its stage file has. A depot can hold that judgment to its code
 with a file in its repository, `.yardr/security_paths`:
 
@@ -526,6 +527,56 @@ pointer finds only in the depot's repository is a repository flow.
 
 A stage whose name holds a slash has its file a directory deeper
 (`default/qa/smoke.md` for `qa/smoke`). An empty file counts as none.
+
+**Setting a store flow's stage file.** The files are yours to edit in the
+home, and `yardr flow set-stage <flow> <stage> -f <file>` does it for you:
+it creates or replaces `<home>/flows/<flow>/<stage>.md`, and is the
+operator's. The text is written whole, in one step, so that a reader sees
+the old file or the new, and at the mode of the file it replaces (a new one
+is `rw-r--r--`); `-f -` takes stdin as it is, trailing newlines too. A stage
+the flow does not have is refused, naming the stages it has, and so is text
+with nothing in it, since an empty file counts as none (a stage's file is
+taken away by removing it in a terminal). Nothing is written through a
+symbolic link: one in the flows directory, in the flow's own or at the file
+is refused.
+
+`--digest` holds the write to the file as you read it, so that a change made
+since is not written over. `--digest none` creates the file and is refused
+where one stands. `--digest <sha256>`, the digest `sha256sum <file>` prints
+on Linux and `shasum -a 256 <file>` on macOS, replaces only the file with
+that digest, and is refused where the file moved, naming both. With neither,
+whatever stands is replaced. A file that already holds exactly the text is
+left as it is.
+
+```
+yardr flow set-stage code review -f review.md
+yardr flow set-stage code qa/smoke -f smoke.md --digest none
+```
+
+A flow in a depot's repository has its stage files in the repository, so
+`flow set-stage` refuses it, naming the path to change there:
+`.yardr/flows/<flow>/<stage>.md` for a flow, and
+`.yardr/flows/type/<type>/<stage>.md` for a type's, edited on a branch and
+committed. Nothing here writes a branch or a commit.
+
+A crew member or a user proposes the same change as a card, which the
+operator approves: `yardr bead ask <id> - --run-flow <file>`, with the command
+on an `R:` line of stdin (`R: flow set-stage <flow> <stage>
+[--digest <sha256|none>]`). The text goes beside the command, from the file as
+it is when the ask is made, and never as `F:` lines, which trim and drop the
+blank lines a stage file has. The card is weighty `code`, always: it shows the
+text that stands and the text proposed, each whole, and a warning where the
+proposed text breaks its `## Ask` section. It refuses at the ask a text past
+32 KiB or with a control character other than a tab or a newline (those are
+set in a terminal), a file that is not what `--digest` says, and a file that
+holds the text already. The approval is held to the file as the card saw it,
+so one that appeared, changed, was removed or was emptied since is refused
+with nothing written. For a flow a pack manages the card says so: it sets the
+yard's copy of the stage file and changes nothing of the pack, and `yardr pack
+apply` then keeps the yard's copy, whatever the pack moves, and sets the
+pack's only where it is told to (`--take file/<name>`, the name `yardr pack
+check <pack>` gives the file). Either way the write is recorded as `flow_set`,
+with the `stage` beside the `flow`.
 
 Where it shows:
 
@@ -776,6 +827,23 @@ to linked yards, and a later take-back settles those copies. The ask carries
 the stage, the move per option and the entry event's seq, frozen at ask
 time. Entering a stage that already has an open ask of that stage puts none.
 
+Where the group sets `ask_crew_first` ([groups.md](groups.md#a-crew-member-asked-first))
+and its members name a crew member, the entry puts the ask to the first
+crew member in members order alone, and no person is asked. The crew
+member answers as a member, as any member does. It passes the ask up by
+taking it back with its words, which stand as its authored answer note
+where the person reads them; on the daemon's next pass the stage's people
+are asked the same card. If it does neither within the group's `wait` —
+an hour where the group sets none — the yard takes its ask back on that
+pass, with the silence named in the reason, and asks the people in the
+same write. Before the wait, silence asks nobody new. A person who was
+asked for the stay, and answered or declined, is never asked again for
+it: the placed asks are what remember the fall-through happened, and a
+person's decline stands. Leaving the stage and coming back is a new
+stay: the crew member is asked first again, and its silence falls
+through anew. A group whose members name no crew member, and one that
+does not set the key, asks its people on entry as above.
+
 Any move out takes the stage's open and put-aside asks back in the same
 write, authored `yard` with the reason `moved to <to> by <actor>`;
 answered and declined asks stay as history. A same-stage transition is a
@@ -870,82 +938,6 @@ and in its brief. An exec group's script gets no brief and no map.
   `current`) and `path` (each `stage`, and `back` where the move went
   against the order: the outcome, or `by hand`), which is never shortened.
 
-## Drawing a flow
-
-yardr draws a flow as a signalling diagram, in SVG on standard output. This
-is the starter pack's:
-
-![The starter pack's flow as a signalling diagram](flows/starter.svg)
-
-Its train flow has the path through review and landing:
-
-![The starter pack's train flow as a signalling diagram](flows/starter.train.svg)
-
-```sh
-yardr flow show yardr --svg > flow.svg                # a depot's flow, with the groups its routes name
-yardr flow show yardr --svg --flow train > train.svg  # another of its flows, by name or bead type
-yardr flow show code --svg                            # a named flow of the store
-yardr flow draw .yardr/flows/default.flow             # a flow file
-yardr flow draw starter                               # a pack yardr embeds, by name
-yardr flow draw ./packs/dir --flow train              # a pack's directory, and which of its flows
-yardr flow draw starter --mini > mini.svg             # the line plan instead
-```
-
-`flow draw` reads files only and needs no yard. All of them draw with one
-function, so the same flow with the same groups is the same file whichever
-way it was asked for. A depot or pack with several flows draws its own (a
-pack's first) unless `--flow` names another, and says on standard error which
-others there are. With `--mini` they draw the line plan instead — one thin
-track, each stage a section of it, the other edges as thin unlabelled
-lines — the drawing the yard panel uses (docs/web.md, "The yard panel").
-
-How to read it:
-
-- **The track** runs left to right past a platform per stage, in the order
-  a bead travels from the first stage, the terminal stages last: their
-  platforms are dashed, and the track ends in a buffer stop. The heavy track
-  from one platform to the next is the stage's way on: its outcome `done`,
-  else its first outcome, else (a stage without outcomes) its first
-  transition. Where two platforms only stand next to each other, with no
-  such transition between them, the track is dotted.
-- **Below the track** is every other transition between platforms: a line
-  that leaves the track after its stage, with the outcome that takes it, and
-  rises to the track, at the arrowhead, before the stage it leads to. Most
-  lead back (`review` to `new` on `changes`); one that leads forward passes
-  a platform. Lines to the same stage join.
-- **A siding**, above the line, is a stage that is not on the way from the
-  first stage and that no outcome leads out of: a bead waits there for a
-  person (`decide`). A spur rises to it after each stage that leads there,
-  with its outcome, and one comes down before each stage a person may move
-  the bead on to. A move from one siding to another is not drawn.
-- **A dashed line** is a move no outcome takes: someone advances the bead by
-  hand (`yardr bead advance`).
-- **A signal** stands at a stage that can report `changes`: a review.
-- **A building** under a platform (beside a siding's name) is the group that
-  works the stage: a shed with a bay per bead the group works at once (its
-  limit; at most six are drawn, and the name then says the limit) for a
-  group that runs agent sessions, a station building for a `manual` group, a
-  works for an `exec` group, and a dashed line with a goods wagon for a
-  group whose beads another yard works. A flow file names no group, so its
-  drawing has no buildings.
-
-Which stages are platforms and in what order follows from the flow alone,
-never from who works a stage, so a flow file, a pack and a depot draw the
-same line for the same flow. No bead is drawn: the picture is of the flow,
-not of the yard.
-
-The file carries a light and a dark set of colours and picks by
-`prefers-color-scheme`, also when a page shows it as an image, as GitHub
-shows a README's; it paints its own background, so it reads on a page of
-either colour. It names its faces (IBM Plex Mono, Barlow Condensed) and
-falls back to the machine's monospace and sans-serif.
-
-`docs/flows/starter.svg` above is written by `go generate ./internal/flowdraw`
-from `packs/starter/pack.yaml`, one file per flow of the pack
-(`starter.<flow>.svg` for any but its first). A test fails when the
-committed file is not what the generator writes now, so after a change to
-the starter pack's flow or to the drawing, generate and commit.
-
 ## Type flows
 
 A type's flow governs that type's beads in the depot; every other type
@@ -1000,10 +992,10 @@ stage of the flow:
 ```
 STAGE    GROUP    MEMBERS         OPEN  FILE  NEXT
 backlog  backlog  ada,yardmaster  6     yes   siding | new | decide
-siding   siding   ada,yardmaster  3     yes   ready | backlog
+siding   siding   ada,yardmaster  3     yes   new | ready | backlog
 ready    ready    ada,yardmaster  0     yes   new | backlog
 ...
-siding: folds at 4 beads, or 8h after the latest arrives; at most 6 points; the carrier goes to ready
+siding: folds at 4 beads, or 8h after the latest arrives; at most 6 points; the carrier goes to new
         now 3 waiting, 4 points, 1 stuck; folds at 4 or at 09:40
 ```
 
@@ -1080,7 +1072,7 @@ flow default (repo@2c2a589)
 STAGE            GROUP            MEMBERS            NEXT
 backlog          backlog          mckean,yardmaster  shape | siding | new | decide
 shape            shapers          -                  siding on small | new on done | decide on question | backlog
-siding           siding           mckean,yardmaster  ready | backlog
+siding           siding           mckean,yardmaster  new | ready | backlog
 new              yardr-builders   -                  review on done | decide on question | backlog
 decide           decisions        mckean,yardmaster  backlog | new
 ready            ready            mckean,yardmaster  new | backlog
@@ -1099,7 +1091,7 @@ no store pointer overrides it. It governs every bead that is not a train
 # default.flow
 backlog -> shape | siding | new | decide
 shape -> siding on small | new on done | decide on question | backlog
-siding -> ready | backlog
+siding -> new | ready | backlog
 ready -> new | backlog
 new -> review on done | decide on question | backlog
 review -> review-security on done | approved on done-safe | new on changes max 3 then decide | decide on question
@@ -1118,7 +1110,7 @@ do.
 | backlog | `backlog` | manual (Christopher and the yardmaster, who picks which beads go to `shape`) |
 | shape | `shapers` | herdr, Muse, limit 2, `prompt=roles/shaper.md` |
 | siding | `siding` | manual (Christopher and the yardmaster; `fold=4`, `fold_after=8h`, `fold_max=6`: the yard folds the waiting beads into one carrier by itself) |
-| ready | `ready` | manual (Christopher and the yardmaster, who sends each carrier to `new`) |
+| ready | `ready` | manual (Christopher and the yardmaster; for a bead a person sends to `new` by hand — carriers no longer wait here) |
 | new | `yardr-builders` | herdr, Claude Code, limit 5, `prompt=roles/builder.md` |
 | review | `yardr-reviewers` | herdr, Codex, limit 3, `prompt=roles/reviewer.md` |
 | review-security | `yardr-security` | herdr, `prompt=roles/review-security.md`: the second review, for security alone ([line.md](line.md#then-once-more-for-security-alone)) |
@@ -1134,8 +1126,8 @@ and `size:small` goes to `siding` on `small`, to wait for company and leave
 folded with it; any other `difficulty:1` bead goes to `new` on `done`; a
 heavier one, a duplicate, or one needing a decision only a person can make
 goes to `decide` on `question`, with the question asked on the bead first.
-Beads in `siding` leave folded into one carrier, which waits in `ready` for
-a person to send it to `new`.
+Beads in `siding` leave folded into one carrier, which goes to `new` by
+itself; `ready` stays for a bead a person sends to `new` by hand.
 
 The assembly lands an approved bead and advances it to `merged`, which
 closes it; a red run of the tests sends it back to `new`. The flow has no `merge`

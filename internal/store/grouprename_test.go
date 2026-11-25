@@ -198,8 +198,14 @@ func TestRenameGroupRefusals(t *testing.T) {
 		{"builders", "makers", "yardmaster", "only the operator (mckean) may rename a group; this is yardmaster"},
 		{"builders", "makers", "ada", "only the operator (mckean) may rename a group; this is ada"},
 	} {
-		if _, err := y.RenameGroup(y.ctx, c.name, c.to, c.actor); err == nil || !strings.Contains(err.Error(), c.want) {
+		_, err := y.RenameGroup(y.ctx, c.name, c.to, c.actor)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("rename %s to %s as %s = %v, want %q", c.name, c.to, c.actor, err, c.want)
+		} else if strings.HasPrefix(c.want, "only the operator") {
+			// No run ask proposes a rename.
+			if class, ok := IsOperatorOnly(err); !ok || class != Alone {
+				t.Errorf("rename %s to %s as %s = %v (mark %v, %v), want an operator-only refusal marked alone", c.name, c.to, c.actor, err, class, ok)
+			}
 		}
 	}
 	if evs, err := y.EventsOfKind(y.ctx, "group_renamed", 10); err != nil || len(evs) != 0 {
@@ -546,10 +552,9 @@ func (y *askYard) routeOf(t *testing.T, id string) Route {
 
 // A script group's sessions count as the group where another group lists it
 // among its members (memberAllowed), so its rename changes the name in those
-// lists, and the card says which groups' lists: without it the script could no
-// longer move the beads of their stages. The name of a group of another runner
-// in a list is a user's or a crew member's, and no rename of that group
-// touches it.
+// lists, and says which groups' lists: without it the script could no longer
+// move the beads of their stages. The name of a group of another runner in a
+// list is a user's or a crew member's, and no rename of that group touches it.
 func TestRenameAScriptGroupFollowsTheMembersThatNameIt(t *testing.T) {
 	t.Parallel()
 	y, _ := renameYard(t)
@@ -572,17 +577,9 @@ func TestRenameAScriptGroupFollowsTheMembersThatNameIt(t *testing.T) {
 		return g.Members
 	}
 
-	seq := y.ask(t, listAsk("mckean", "group rename release shipping"), "yardmaster")
-	card := strings.Join(y.asked(t, seq).Ask.Run.Does, "\n")
-	if want := "the groups backlog, ready list it among their members, which is how its script may move the beads of their stages: they list shipping."; !strings.Contains(card, want) {
-		t.Errorf("the card says %q, want it to say %q", card, want)
-	}
-	done, err := y.ApproveAsk(y.ctx, y.bead, seq, "mckean", false, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(done.Result, "groups whose members listed it list the new name: backlog, ready") {
-		t.Errorf("the approval ran %q", done.Result)
+	renamed, err := y.RenameGroup(y.ctx, "release", "shipping", "mckean")
+	if err != nil || !slices.Equal(renamed.Members, []string{"backlog", "ready"}) {
+		t.Fatalf("renaming a script group = %+v, %v: want the two lists that name it in members", renamed, err)
 	}
 	if got := members("backlog"); !slices.Equal(got, []string{"mckean", "shipping", "yardmaster"}) {
 		t.Errorf("backlog's members = %v", got)

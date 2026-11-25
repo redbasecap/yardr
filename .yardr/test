@@ -53,7 +53,11 @@
 # allow-list below, naming why each entry is over and which bead brings it
 # under; the fix beads delete the rows. A race leg runs a package it ran
 # over budget and not allow-listed again by itself: over budget alone on a
-# quiet machine fails the run; on a loaded machine (loaded as the re-runs
+# quiet machine fails the run, unless it is over budget alone at the base
+# too, which the same package alone in a worktree at the base then proves:
+# the landing passes with an R1 line naming both alone times and the fix
+# bead a person owes for the base's time, and a base run that cannot start
+# fails as before; on a loaded machine (loaded as the re-runs
 # started or as the last ended) it passes with an R1 line naming both times and
 # the load, unless YARDR_R1_STRICT is set by the quiet run. Then over budget
 # alone on a loaded machine is refused the verdict (exit 3), in an R1 line
@@ -93,11 +97,14 @@
 # After each step a line says how many seconds it took (test: go vet ./...
 # took 14 s), so a landing's log shows where a run's time went. The run ends
 # with its test line, the line a note carries whole: `test: sh .yardr/test @
-# <sha>: pass, <n> packages ok, 0 failed, 112 s, waited 40 s` -- the result,
-# the packages go test printed `ok` and `FAIL` for across the run's legs, the
-# wall seconds, and the seconds queued on the machine-wide race lock
-# (docs/testing.md R4 names the fields). A plan (YARDR_TEST_PLAN=1) and a run
-# that could not start (exit 2) print none.
+# <sha>: pass, <n> packages ok, 0 failed, 112 s, waited 40 s (base <base>, 7
+# files changed)` -- the result, the packages go test printed `ok` and `FAIL`
+# for across the run's legs, the wall seconds, the seconds queued on the
+# machine-wide race lock, and what the run compared with: the base it selected
+# from and how many files had changed since it, or `(no comparable base)` for a
+# landing that had none and ran the whole suite (docs/testing.md R4 names the
+# fields). A plan (YARDR_TEST_PLAN=1) and a run that could not start (exit 2)
+# print none.
 #
 # A red run ends with the lines that say what failed, since a note carries
 # only the end of the output. Exit 2 is "could not run", which the assembly
@@ -111,8 +118,9 @@
 # each Go file has under its ceiling (the filesizes table below), in the seconds
 # a find and a wc take, and exits 0 whatever it finds. A listed file has none, a
 # file with no row fails at 1000 lines, so run it before planning a change to a
-# file near or over 1000 lines, not after the gate has failed it. With a path it
-# reports that file alone.
+# file near or over 1000 lines, not after the gate has failed it. A generated
+# file (generatedfiles) has no ceiling at any size, and the report names it
+# exempt. With a path it reports that file alone.
 #
 # `sh .yardr/test sizes --rewrite` is what the landing runs on what it lands: it
 # lowers the table in this file to the tree it is run in (filesizerewrite), so
@@ -146,10 +154,16 @@ unset YARDR_TEST_LOAD
 GOFLAGS="${GOFLAGS:+$GOFLAGS }-trimpath"
 export GOFLAGS
 # The run's own test line is printed by finish, on exit, from these: the wall
-# seconds since started, the race-lock seconds the legs waited, and the
-# packages go test printed `ok` and `FAIL` for. tmp is pick's, below.
+# seconds since started, the race-lock seconds the legs waited, the packages go
+# test printed `ok` and `FAIL` for, and what the run compared with. tmp is
+# pick's, below.
+# compared is empty until the run has compared, and is set where it knows what
+# it compared with (the base below, and the diff): finish runs on every exit, a
+# failure before the base is read among them, and a line that ends there must
+# not claim a diff the run never took.
 started=$(date +%s)
 waited_total=0 pkgs_ok=0 pkgs_failed=0
+compared=
 tmp=
 beside=
 beside_counts=
@@ -1102,7 +1116,9 @@ again() {
 # compiler say (file.go:line:col: message), then each failed test's own lines
 # under its report, so the summary says why and not only which, and the tests
 # a timeout caught running, which its panic line does not name. At most 60
-# lines over both, the first ones.
+# lines over both, the first ones: sed prints them and reads on, where a head
+# would exit at the 60th and leave the writers a pipe nobody reads, which they
+# say on stderr where SIGPIPE is ignored (a CI runner's children have it so).
 failed() {
   f=$1
   shift
@@ -1110,7 +1126,7 @@ failed() {
   {
     grep -a -E -e '--- FAIL' -e '^FAIL' -e 'panic:' -e 'DATA RACE' -e '^[^[:space:]]+\.go:[0-9]+:[0-9]+:' "$f" || true
     flakyfails --human "$f"
-  } | head -n 60 || true
+  } | sed -n 1,60p || true
 }
 # waitcount prints the race-lock seconds one step's log ($1) holds: the
 # `test: waited N s` lines its race legs printed, 0 when there are none.
@@ -1406,15 +1422,19 @@ diskfailed() {
         if (index($0, text)) hit = 1
       }
     ' "$1" | sort -u
-  elif [ -z "$(sed -n 's/.*--- FAIL: \([^ ][^ ]*\).*/\1/p' "$1" | head -n 1)" ]; then
+  elif [ -z "$(sed -n 's/.*--- FAIL: \([^ ][^ ]*\).*/\1/p' "$1")" ]; then
     case $(flakyfails "$1" || true) in *"$flaky_disk"*) echo - ;; esac
   else
     flakyfails --disk "$1" | sort -u
   fi
 }
 # inlist says whether the word $1 is a line of the text $2. It is a literal
-# match: test names and package paths hold characters a pattern would read.
-inlist() { printf '%s\n' "$2" | grep -qxF -- "$1"; }
+# match: test names and package paths hold characters a pattern would read. It
+# counts the matching lines, to read the whole text: a grep -q that stops at the
+# first match leaves printf, if it has more to write, a pipe nobody reads, and
+# where SIGPIPE is ignored (a CI runner's children have it so) printf says
+# "write error: Broken pipe" on stderr (yardr-8x49).
+inlist() { [ "$(printf '%s\n' "$2" | grep -cxF -- "$1")" != 0 ]; }
 # briefly prints the lines it is given on one line, five of them at most and
 # then how many more: a full disk fails every package and tens of tests, and the
 # line it is named in is read by a person.
@@ -1617,12 +1637,15 @@ flakyfile() {
   echo "test: filed $filed: $title"
 }
 # summary prints the run's test line ($1 is its exit status: 0 passed, 3 not
-# judged): the result, the packages passed and failed, the wall seconds, and
-# the seconds queued on the race lock. A note carries it whole
-# (docs/testing.md R4).
+# judged): the result, the packages passed and failed, the wall seconds, the
+# seconds queued on the race lock, and what the run compared with (compared),
+# which closes the line: the base it selected from and the number of files that
+# had changed since it. A note carries it whole (docs/testing.md R4), so a
+# reviewer holds the base and the count against the branch's diff, and a run
+# that selected from less than the branch changed shows it (yardr-js99).
 summary() {
   if [ "$1" = 0 ]; then res=pass; elif [ "$1" = 3 ]; then res="not judged"; else res=fail; fi
-  echo "test: sh .yardr/test @ $(git rev-parse --short HEAD): $res, $pkgs_ok packages ok, $pkgs_failed failed, $(($(date +%s) - started)) s, waited $waited_total s"
+  echo "test: sh .yardr/test @ $(git rev-parse --short HEAD): $res, $pkgs_ok packages ok, $pkgs_failed failed, $(($(date +%s) - started)) s, waited $waited_total s$compared"
 }
 # The packages over the 60 s budget (docs/testing.md R1): a directory, the
 # bead that brings it under, and why it is over. One row is a package
@@ -1631,7 +1654,9 @@ summary() {
 # YARDR_QUIET_RUN is set.
 # A race leg that runs one of these over 60 s still passes;
 # any other package over 60 s is run again alone, and fails the run when
-# over 60 s again on a quiet machine; over again on a loaded one passes
+# over 60 s again on a quiet machine, unless it is over alone at the base
+# too (packagebudget runs it there): then the landing passes and a person
+# files the fix bead this list waits for; over again on a loaded one passes
 # with the load named (loaded as the re-run started or as it ended), unless
 # YARDR_R1_STRICT is set by the quiet run.
 # Then the loaded pass is off: over 60 s alone on a loaded machine is not
@@ -1782,13 +1807,20 @@ legflag() {
 # reads table does: awk takes no newline in -v.
 # A package over budget that the allow-list does not name is run again by
 # itself, and judged by the re-run: over 60 s alone fails on a quiet
-# machine, naming both times, and passes with both times and the load on a
-# loaded one (loadedmachine), unless YARDR_R1_STRICT is set by the quiet
+# machine, naming both times, unless the package is over alone at the base
+# too, which one more run of it alone in a worktree at the base (the ref
+# YARDR_BASE names, else origin/main) proves on that fail path alone: then
+# the run passes with an R1 line naming the run's, the alone and the
+# base's times and the fix bead owed, and a base run that cannot start,
+# fails or prints no seconds falls back to the failure; the worktree is
+# removed after, and the tree under test is untouched. Over alone on a
+# loaded machine passes with both times and the load (loadedmachine),
+# unless YARDR_R1_STRICT is set by the quiet
 # run. Then the loaded pass is off: over 60 s alone on a loaded machine is
 # refused the verdict, in a `test: R1:` line naming both times and the load,
 # and the run ends neither passed nor failed (exit 3, which only a strict
 # run returns, so only the quiet run ever sees it); over 60 s alone on a
-# quiet machine fails as before, and a quiet-sample failure or a failed
+# quiet machine is judged as above, base compare included, and a quiet-sample failure or a failed
 # re-run beside a refusal still fails the run (exit 1). The machine is
 # sampled twice, as the re-runs start and
 # when the last ends, and is loaded when either sample is (loadedeither);
@@ -1958,18 +1990,72 @@ packagebudget() {
       if awk -v s="$alone" 'BEGIN { exit !(s + 0 > 60) }'; then
         if load=$(loadedeither "$load_start" "$load_end"); then
           if [ -n "$YARDR_R1_STRICT" ]; then
-            echo "test: R1: $pkg took $secs s in the run, $alone s alone: over budget, loaded machine ($load), not judged"
+            echo "test: R1: not judged: $pkg took $secs s in the run, $alone s alone: over budget, loaded machine ($load)"
             # A refusal, not a failure: exit 3, unless a package already
             # failed the run, which still fails it.
             if [ "$st" != 1 ]; then
               st=3
             fi
           else
-            echo "test: R1: $pkg took $secs s in the run, $alone s alone: over budget, loaded machine ($load), not failed"
+            echo "test: R1: not failed: $pkg took $secs s in the run, $alone s alone: over budget, loaded machine ($load)"
           fi
         else
-          echo "test: $pkg took $secs s with -race, $alone s alone, over the 60 s budget (docs/testing.md R1)"
-          st=1
+          # Over alone on a quiet machine fails, unless the package is over
+          # alone at the base too: then the time is the base's, not the
+          # change's, and the landing passes with a line naming both alone
+          # times and the fix bead a person now owes, as a flake's line
+          # names the bead a hand files for it. The base run is the same
+          # package alone, with the leg's flags, in a worktree the run
+          # makes at the base and removes after: the tree under test is
+          # untouched, and nothing is written but the worktree. A base
+          # that cannot be read, a worktree that cannot be made or a base
+          # run that cannot start or fails falls back to the failure
+          # below, as an unknown load does; under budget at the base fails
+          # as before. The loaded verdicts above never reach this: a load
+          # is the machine's, not the base's, to excuse.
+          balone=
+          baseref=${YARDR_BASE:-origin/main}
+          bcommit=$(git rev-parse --verify --quiet "$baseref^{commit}" 2>/dev/null) || bcommit=
+          if [ -n "$bcommit" ]; then
+            bwt=$(mktemp -d "${TMPDIR:-/tmp}/yardr-r1-base.XXXXXX")
+            if git worktree add --detach "$bwt/wt" "$bcommit" >/dev/null 2>&1; then
+              bout=$bwt/out
+              # shellcheck disable=SC2086
+              ( cd "$bwt/wt" && $prefix $flags -count=1 "$pkg" </dev/null >"$bout" 2>&1; echo "$?" >"$bout.rc" )
+              brc=$(cat "$bout.rc" 2>/dev/null) || brc=1
+              [ -n "$brc" ] || brc=1
+              if [ "$brc" = 0 ]; then
+                balone=$(awk '
+                  function seconds(s, total, n) {
+                    if (s == "") return -1
+                    total = 0
+                    while (match(s, /^[0-9]+([.][0-9]+)?/)) {
+                      n = substr(s, 1, RLENGTH) + 0
+                      s = substr(s, RLENGTH + 1)
+                      if (s ~ /^h/) { total += n * 3600; sub(/^h/, "", s) }
+                      else if (s ~ /^ms/) { total += n / 1000; sub(/^ms/, "", s) }
+                      else if (s ~ /^m/) { total += n * 60; sub(/^m/, "", s) }
+                      else if (s ~ /^µs/) { total += n / 1000000; sub(/^µs/, "", s) }
+                      else if (s ~ /^us/) { total += n / 1000000; sub(/^us/, "", s) }
+                      else if (s ~ /^ns/) { total += n / 1000000000; sub(/^ns/, "", s) }
+                      else if (s ~ /^s/) { total += n; sub(/^s/, "", s) }
+                      else return -1
+                    }
+                    return s == "" ? total : -1
+                  }
+                  /^ok[ \t]/ { s = seconds($3); if (s >= 0) { printf "%.9g\n", s; exit } }
+                ' "$bout")
+              fi
+              git worktree remove --force "$bwt/wt" >/dev/null 2>&1 || true
+            fi
+            rm -rf "$bwt"
+          fi
+          if [ -n "$balone" ] && awk -v s="$balone" 'BEGIN { exit !(s + 0 > 60) }'; then
+            echo "test: R1: passed: $pkg took $secs s in the run, $alone s alone, $balone s alone at the base: over the 60 s budget on the base too (docs/testing.md R1), fix bead owed"
+          else
+            echo "test: $pkg took $secs s with -race, $alone s alone, over the 60 s budget (docs/testing.md R1)"
+            st=1
+          fi
         fi
       else
         echo "test: R1: $pkg took $secs s in the run, $alone s alone: under budget, loaded run"
@@ -2070,48 +2156,48 @@ sleepbudget() {
 # changes that shrink the same file, or two neighbouring files, never
 # conflict on a row. The ceiling only falls: the landing lowers rows to
 # actual, and nothing else edits a row. The root package's test holds the
-# rows to non-test Go files.
+# rows to non-test Go files, and to none that is generated (generatedfiles):
+# a ceiling that only falls cannot follow what a generator reads.
 filesizes='
 internal/cli/beads.go 1098 the bead show, list and history commands and their printing
-internal/cli/crew.go 2212 the crew, inbox, mail and memory commands
+internal/cli/crew.go 1950 the crew, inbox, mail and memory commands
 internal/cli/doctor.go 1243 the doctor examinations and its report
-internal/cli/init.go 1600 yard init, onboarding and settings
+internal/cli/init.go 1597 yard init, onboarding and settings
 internal/cli/ops.go 1699 the server, daemon, depot, group, route and session commands
 internal/cli/pack.go 1866 pack loading, import planning and its question rounds
 internal/cli/peers.go 1564 the peer identity, intake and ping commands
 internal/cli/routereport.go 1513 the route report and its rendering
-internal/cli/sourcecmd.go 2092 the source command and its builtin checks
+internal/cli/sourcecmd.go 2088 the source command and its builtin checks
 internal/cli/subscriptions.go 1148 the identity, subscribe and thread commands
 internal/cli/updown.go 1302 yard up and down with their handoffs
 internal/dispatch/dispatch.go 1501 the daemon routing pass and its runners
 internal/dispatch/harnesslogin.go 1094 harness login leading and onboarding marks
 internal/pack/export.go 1047 pack export and its object shapes
-internal/pack/pack.go 1777 pack reading, checking and its shapes
+internal/pack/pack.go 1776 pack reading, checking and its shapes
 internal/rpc/user.go 1053 the user server and callers (pairing is userpair.go, envelopes usere2e.go)
-internal/source/declaration.go 1223 source declarations, credentials and calls
 internal/standin/standin.go 1508 the fake Linear, GitHub and edge APIs
 internal/store/asks.go 1683 ask and answer parsing and storage
-internal/store/beads.go 2563 bead CRUD, queries and dispatch reads
-internal/store/crew.go 1461 crew records and their events
+internal/store/beads.go 2557 bead CRUD, queries and dispatch reads
+internal/store/crew.go 1459 crew records and their events
 internal/store/flows.go 1358 flow parsing and storage
 internal/store/graph.go 1311 the dependency graph and its queries
 internal/store/hooks.go 1091 webhook parsing and the say shapes
 internal/store/peerasks.go 1073 peer asks, their answers and ask copies
-internal/store/peerbeads.go 1736 peer bead intake and fetching
-internal/store/peers.go 1529 peer records and their allowances
+internal/store/peerbeads.go 1727 peer bead intake and fetching
+internal/store/peers.go 1517 peer records and their allowances
 internal/store/peersend.go 1261 sending beads to peers and settling them
-internal/store/policy.go 1178 the permission gates and their rules
-internal/store/routing.go 3043 groups, routes and their config merges
-internal/store/runask_list.go 1223 ask cards, labels and preset reading
-internal/store/runask_setup.go 1533 the setup ask, its card, and the carrying record
-internal/store/settings.go 1014 yard settings and their checks
-internal/store/sourcecalls.go 1240 source grants and callables
-internal/store/subscriptions.go 1192 identities, subscriptions and where-clauses
-internal/store/users.go 1240 user records and operator words
+internal/store/policy.go 1164 the permission gates and their rules
+internal/store/routing.go 2858 groups, routes and their config merges
+internal/store/runask_list.go 1221 ask cards, labels and preset reading
+internal/store/runask_setup.go 1503 the setup ask, its card, and the carrying record
+internal/store/sourcecalls.go 1236 source grants and callables
+internal/store/subscriptions.go 1145 identities, subscriptions and where-clauses
+internal/store/users.go 1222 user records and operator words
 '
 # filesizebudget fails the run when a non-test Go file stands over its
 # ceiling in the table above, or when one with no row stands over 1000
-# lines. A ceiling standing above its file, or a row naming a file that is
+# lines. A generated file (generatedfiles) is judged by neither, whatever
+# its size. A ceiling standing above its file, or a row naming a file that is
 # gone, only warns, whatever the run: the change leaves the row, and the
 # landing lowers or deletes it (filesizerewrite). At landing
 # (YARDR_LANDING set) it is a plain note instead, since the landing
@@ -2120,14 +2206,17 @@ internal/store/users.go 1240 user records and operator words
 # The measure is wc -l, the count the table was seeded
 # with. The allow-list goes by file, as the reads table does: awk takes no
 # newline in -v. It says how many listed files the tree holds, so the
-# re-measure can count the oversize debt. Before formatting, vet, build and
+# re-measure can count the oversize debt. The generated files go to awk the same
+# way, in a file after it. Before formatting, vet, build and
 # test, the run warns of each file with fewer than 50 lines of room under its
 # ceiling (filesizeview), so the file is known before a change takes it over.
 filesizebudget() {
   t0=$(date +%s)
   st=0
   allow=$(mktemp)
+  exempt=$(mktemp)
   printf '%s\n' "$filesizes" >"$allow"
+  generatedfiles >"$exempt"
   out=$(sizelines | awk -v landing="$YARDR_LANDING" '
     FILENAME == ARGV[1] {
       if ($0 ~ /^[^ ]+ [0-9]+ /) {
@@ -2137,10 +2226,14 @@ filesizebudget() {
       }
       next
     }
+    FILENAME == ARGV[2] { gen[$0] = 1; next }
     $2 == "total" || NF < 2 { next }
     {
       n = $1 + 0
       f = $0; sub(/^ *[0-9]+ +/, "", f); sub(/^\.\//, "", f)
+      # A generated file has no ceiling to stand over, whatever the table
+      # says of it. It is seen, so a row naming it is no row of a gone file.
+      if (f in gen) { seen[f]++; next }
       if (f in ceil) {
         seen[f]++
         if (n > ceil[f]) {
@@ -2173,12 +2266,190 @@ filesizebudget() {
       }
       if (bad > 0) exit 1
       if (nseen > 0) printf "test: %d files over 1000 lines allow-listed\n", nseen
-    }' "$allow" -) || st=$?
-  rm -f "$allow"
+    }' "$allow" "$exempt" -) || st=$?
+  rm -f "$allow" "$exempt"
   took "$t0" "file size budgets"
   # A direct budget check still warns, while a gate run's earlier call makes
   # this a no-op there. A warning fails nothing, not even by failing itself.
   filesizewarnings
+  if [ -n "$out" ]; then printf '%s\n' "$out"; fi
+  [ "$st" = 0 ] || exit 1
+}
+# Every production write of a peer, group, crew member or user record (a put
+# or a bucket delete on bPeers, bGroups, bCrew or bUsers in a non-test,
+# non-migration file of internal/store), and what the staleness tells have
+# decided of it: hook (the write tells in its own function), top (its caller
+# tells for it), skip with the proof that no fingerprint of its family reads
+# what it writes, or undecided with the bead that will decide it. A site is
+# named by its file, its function, its bucket and which write of that bucket
+# in that function it is, so that a line moving inside the function, or a
+# write of another bucket beside it, leaves the name standing. The group,
+# peer, crew and user writes are decided here, and no write of theirs may
+# stand undecided. tellsitebudget below fails the run on a write in
+# none of the states and on an undecided write naming the wrong bead, and
+# warns on a listed write that is gone, as the file size budget warns on a
+# row whose file is gone: the yardtest fixtures run this script on a tree
+# that holds no store writes at all, where a gone row can only warn. The
+# peer writes are decided here too (yd-87dr): each tells beside its own
+# put; source folds and user removals tell at their enclosing writes,
+# each named in its row. The crew writes are decided here too (yd-gvbd):
+# each tells beside its own put; the source fold and a peer's rename and
+# removal tell at their enclosing writes, each named in its row. The user
+# writes are decided here too (yd-gjsd): each tells beside its own put;
+# the source fold tells at its enclosing write, each named in its row.
+tellsites='
+internal/store/groupedit.go putGroup bGroups 1 hook putGroup tells beside its group_set
+internal/store/groupedit.go deleteGroup bGroups 1 hook deleteGroup tells with nothing after it
+internal/store/grouprename.go apply bGroups 1 hook the rename deletes the old name and tells it with nothing after it
+internal/store/grouprename.go apply bGroups 2 hook the rename puts the new name and tells it from nothing
+internal/store/grouprename.go apply bGroups 3 hook the rename puts each other group and tells it
+internal/store/peersend.go renamePeerGroups bGroups 1 top told at renamePeer in peerrename.go where the peer is renamed
+internal/store/movesource.go moveSubscriptions bGroups 1 skip writes subscriptions alone and no group fingerprint reads subscriptions
+internal/store/peersource.go renamePeerFilters bGroups 1 skip writes subscriptions alone and no group fingerprint reads subscriptions
+internal/store/subscriptions_write.go writeGroupSubs bGroups 1 skip writes subscriptions alone and no group fingerprint reads subscriptions
+internal/store/unfold.go addWatch bGroups 1 skip writes subscriptions alone and no group fingerprint reads subscriptions
+internal/store/unfold.go dropWatch bGroups 1 skip writes subscriptions alone and no group fingerprint reads subscriptions
+internal/store/yardrsource.go editWatches bGroups 1 skip writes subscriptions alone and no group fingerprint reads subscriptions
+internal/store/movesource.go movePeerIdentities bPeers 1 top told at moveSourceRecords in movesource.go where the fold tells every link it moved
+internal/store/movesource.go movePeerIdentities bPeers 2 top told at moveSourceRecords in movesource.go where the fold tells every link it moved
+internal/store/peerroster.go unexpose bPeers 1 hook unexpose tells beside its write for a crew removal and at unexposeAndUntrust after a user removal
+internal/store/pairing.go pairPeer bPeers 1 hook pairPeer tells from nothing beside its peer_paired
+internal/store/peeradd.go addPeer bPeers 1 hook addPeer tells from nothing beside its peer_added
+internal/store/peerbeads.go setPeerIntake bPeers 1 hook setPeerIntake tells beside its peer_intake
+internal/store/peerbeads.go RemovePeerIntake bPeers 1 hook RemovePeerIntake tells beside its peer_intake
+internal/store/peeridentity.go setPeerIdentity bPeers 1 hook setPeerIdentity tells beside its peer_identity_set
+internal/store/peeridentity.go RemovePeerIdentity bPeers 1 hook RemovePeerIdentity tells beside its peer_identity_removed
+internal/store/peerremove.go deletePeer bPeers 1 hook deletePeer tells with nothing after its peer_removed
+internal/store/peerrename.go renamePeer bPeers 1 hook the rename deletes the old name and tells it gone beside its peer_renamed
+internal/store/peerrename.go renamePeer bPeers 2 hook the rename puts the new name and tells it from nothing beside its peer_renamed
+internal/store/peerrename.go migratePeerSince bPeers 1 skip writes Since alone and no peer fingerprint reads Since
+internal/store/peers.go allowPeer bPeers 1 hook allowPeer tells beside its peer_allowed
+internal/store/peers.go PeerReceive bPeers 1 skip writes HeardAt and the hour counters alone and no peer fingerprint reads them
+internal/store/peers.go PeerHeard bPeers 1 top told at distrusted in peertrust.go where the trust its word dropped is told in the write that saves it
+internal/store/peers.go PeerPostAnswered bPeers 1 top told at distrusted in peertrust.go where the trust its word dropped is told in the write that saves it
+internal/store/peers.go PeerPulled bPeers 1 top told at distrusted in peertrust.go where the trust its word dropped is told in the write that saves it
+internal/store/peerurl.go setPeerURL bPeers 1 hook setPeerURL tells beside its peer_url_set
+internal/store/peertrust.go untrust bPeers 1 top told at unexposeAndUntrust after user exposure and trust removals
+internal/store/crew.go putCrew bCrew 1 hook putCrew tells beside its crew_defined
+internal/store/crew.go DeleteCrew bCrew 1 top told at changeCrewAt in crew.go where the removal is saved
+internal/store/crew.go changeCrewAt bCrew 1 hook changeCrewAt tells beside its save
+internal/store/crewsession.go changeCrewSessionAt bCrew 1 skip writes a session runtime alone and no crew fingerprint reads it
+internal/store/grouprename.go apply bCrew 1 hook the rename tells beside its crew put
+internal/store/movesource.go moveCrewIdentitiesAndGrants bCrew 1 top told at moveSourceRecords in movesource.go where the fold tells every member it moved
+internal/store/movesource.go moveSubscriptions bCrew 1 skip writes subscriptions alone and no crew fingerprint reads subscriptions
+internal/store/peerbeads.go changePeerSettings bCrew 1 top told at renamePeer in peerrename.go and deletePeer in peerremove.go where the peer is renamed or removed
+internal/store/peersource.go renamePeerFilters bCrew 1 skip writes subscriptions alone and no crew fingerprint reads subscriptions
+internal/store/subscriptions.go setCrewIdentity bCrew 1 hook setCrewIdentity tells beside its identity_set
+internal/store/subscriptions_write.go writeCrewSubs bCrew 1 skip writes subscriptions alone and no crew fingerprint reads subscriptions
+internal/store/threads.go AllowOpening bCrew 1 hook AllowOpening tells beside its open_threads_granted
+internal/store/unfold.go addWatch bCrew 1 skip writes subscriptions alone and no crew fingerprint reads subscriptions
+internal/store/unfold.go dropWatch bCrew 1 skip writes subscriptions alone and no crew fingerprint reads subscriptions
+internal/store/userlogin.go dropLogin bCrew 1 hook dropLogin tells beside its save
+internal/store/yardrsource.go editWatches bCrew 1 skip writes subscriptions alone and no crew fingerprint reads subscriptions
+internal/store/grouprename.go apply bUsers 1 hook the rename tells beside its user put
+internal/store/movesource.go moveUserIdentities bUsers 1 top told at moveSourceRecords in movesource.go where the fold tells every user it moved
+internal/store/movesource.go moveSubscriptions bUsers 1 skip writes subscriptions alone and no user fingerprint reads subscriptions
+internal/store/notifications.go AckUserNotifications bUsers 1 skip writes the notification cursor alone and no user fingerprint reads cursors
+internal/store/notifications.go migrateUserCursors bUsers 1 skip writes cursors alone and no user fingerprint reads cursors
+internal/store/peersource.go renamePeerFilters bUsers 1 skip writes subscriptions alone and no user fingerprint reads subscriptions
+internal/store/pushes.go changePushes bUsers 1 skip writes the LastPush and Pushed receipts alone and no user fingerprint reads them
+internal/store/runask_teammate.go inviteTeammate bUsers 1 skip writes OwnLoginOnly alone and no user fingerprint reads it; the birth tells at addUser in users.go
+internal/store/subscriptions.go setUserIdentity bUsers 1 hook setUserIdentity tells beside its identity_set
+internal/store/subscriptions.go applyUser bUsers 1 skip writes subscriptions alone and no user fingerprint reads subscriptions
+internal/store/unfold.go addWatch bUsers 1 skip writes subscriptions alone and no user fingerprint reads subscriptions
+internal/store/unfold.go dropWatch bUsers 1 skip writes subscriptions alone and no user fingerprint reads subscriptions
+internal/store/userexchange.go AckUserMail bUsers 1 skip writes MailRead alone and no user fingerprint reads mail-read marks
+internal/store/usernotify.go setUser bUsers 1 hook setUser tells beside its user_set
+internal/store/usernotify.go WebhookTried bUsers 1 skip writes LastWebhook alone and no user fingerprint reads it
+internal/store/usernotify.go keyUser bUsers 1 hook keyUser tells beside its user_set where it sets the env file
+internal/store/users.go addUser bUsers 1 hook addUser tells from nothing beside its user_added
+internal/store/users.go ensureOperator bUsers 1 hook ensureOperator tells beside the put that gives the role
+internal/store/users.go ensureOperator bUsers 2 hook ensureOperator tells beside the put that gives the born user the role
+internal/store/users.go subscribeUpgradeFailures bUsers 1 skip writes subscriptions alone and no user fingerprint reads subscriptions
+internal/store/users.go deleteUser bUsers 1 hook deleteUser tells beside its Delete
+internal/store/users.go AckUserInbox bUsers 1 skip writes Cursor and MailRead alone and no user fingerprint reads cursors or mail-read marks
+internal/store/yardrsource.go editWatches bUsers 1 skip writes subscriptions alone and no user fingerprint reads subscriptions
+'
+# tellsitebudget fails the run when a production write of a peer, group, crew
+# member or user record stands in none of the states the list above knows,
+# or stands undecided (every family is decided); a listed write that is gone only
+# warns, for the fixtures above. The writes are found as the list names them (see its comment):
+# the enclosing function of each put or bucket delete, its bucket, and which
+# write of that bucket in that function it is. Test files and the schema
+# migrations (migrate_*.go, which run on open before any hold can stand) are
+# no sites. The check reads the tree alone and judges every run, as the file
+# size budget does, since a write added in a leaf package still owes its
+# family a decision.
+tellsitebudget() {
+  t0=$(date +%s)
+  st=0
+  allow=$(mktemp)
+  found=$(mktemp)
+  printf '%s\n' "$tellsites" >"$allow"
+  for f in internal/store/*.go; do
+    case $f in
+      *_test.go|*/migrate_*.go) continue ;;
+    esac
+    awk -v file="$f" '
+      function emit(  b, k) {
+        if (index($0, "bGroups")) b = "bGroups"
+        else if (index($0, "bPeers")) b = "bPeers"
+        else if (index($0, "bCrew")) b = "bCrew"
+        else b = "bUsers"
+        k = file SUBSEP fname SUBSEP b
+        n[k]++
+        print file, fname, b, n[k]
+      }
+      /^func / {
+        fn = $0
+        sub(/^func \([^)]*\) /, "", fn)
+        sub(/^func /, "", fn)
+        sub(/\(.*/, "", fn)
+        fname = fn
+      }
+      /put\([^)]*b(Groups|Peers|Crew|Users)(,|\))/ { emit() }
+      /Bucket\(b(Groups|Peers|Crew|Users)\)\.(Put|Delete)\(/ { emit() }
+    ' "$f" >>"$found"
+  done
+  out=$(awk '
+    FILENAME == ARGV[1] {
+      if (NF == 0) next
+      key = $1 SUBSEP $2 SUBSEP $3 SUBSEP $4
+      state[key] = $5
+      where[key] = $1 " " $2 " " $3 " " $4
+      if ($5 != "hook" && $5 != "top" && $5 != "skip" && $5 != "undecided") {
+        printf "test: tell site %s stands %s, in no state the tells know\n", where[key], $5
+        bad++
+      } else if (($3 == "bGroups" || $3 == "bPeers" || $3 == "bCrew" || $3 == "bUsers") && $5 == "undecided") {
+        printf "test: tell site %s is a group, peer, crew or user write and may not stand undecided: yardr-w4q0, yd-87dr, yd-gvbd and yd-gjsd decided them\n", where[key]
+        bad++
+      } else if ($5 == "undecided") {
+        printf "test: tell site %s may not stand undecided\n", where[key]
+        bad++
+      } else if ($5 == "skip" && NF < 6) {
+        printf "test: tell site %s stands skip with no proof named\n", where[key]
+        bad++
+      }
+      next
+    }
+    {
+      key = $1 SUBSEP $2 SUBSEP $3 SUBSEP $4
+      found[key] = 1
+      if (!(key in state)) {
+        printf "test: tell site %s %s %s %s is in none of the three states: list it in tellsites as hook, top, skip with its proof or undecided with its bead\n", $1, $2, $3, $4
+        bad++
+      }
+    }
+    END {
+      for (k in state) {
+        if (!(k in found)) {
+          printf "test: warning: listed tell site %s is gone: take its row out or restore the write\n", where[k]
+        }
+      }
+      if (bad > 0) exit 1
+    }' "$allow" "$found") || st=$?
+  rm -f "$allow" "$found"
+  took "$t0" "tell sites"
   if [ -n "$out" ]; then printf '%s\n' "$out"; fi
   [ "$st" = 0 ] || exit 1
 }
@@ -2190,20 +2461,49 @@ filesizebudget() {
 sizelines() {
   find . -name '*.go' -not -name '*_test.go' -not -path './.git/*' -exec wc -l {} + 2>/dev/null | LC_ALL=C sort -k 2
 }
+# generatedfiles prints the path of each file in sizelines's list that a
+# generator wrote, one to a line and in its order, without the leading ./ that
+# the budget and the view cut from the paths they read. A file is generated
+# where its first line is the marker `go help generate` gives,
+# `// Code generated ... DO NOT EDIT.`, which Go's own tools take for generated
+# code too. It stands at the size its generator gives it, which follows what the
+# generator reads (internal/rpc/client_gen.go follows store.API), so it has no
+# row and no ceiling: a ceiling only falls, and this one would have to rise with
+# each method. People read small files, and a generated one is read at its
+# source. The class is left out of the rule as *_test.go is left out of
+# sizelines, and no file of it is listed in the table. Only the first line
+# counts: a file that carries the marker lower down is judged as any other,
+# which fails safe and is noticed. One awk reads each first line and closes the
+# file, so that no more than one is open at a time and no process starts for a
+# file.
+generatedfiles() {
+  sizelines | awk '
+    $2 == "total" || NF < 2 { next }
+    {
+      path = $0; sub(/^ *[0-9]+ +/, "", path)
+      ok = ((getline first < path) > 0 && first ~ /^\/\/ Code generated .* DO NOT EDIT\.$/)
+      close(path)
+      if (ok) { f = path; sub(/^\.\//, "", f); print f }
+    }'
+}
 # filesizeview prints what the file size table says of the tree that the
 # budget's verdict does not: how much room each file has under its ceiling,
 # the ceiling being 1000 for a file with no row. Its mode ($1) is report, the
 # lines of `sh .yardr/test sizes [path]`, or warn, which the gate prints
 # before its verdict. A report has a line for each listed file (its lines, its
 # ceiling and the room between them, negative for a file over its ceiling), for
-# each row whose file is gone, and for each file with no row once fewer than 50
-# lines of room are left; with a path ($2), the line for that file alone, small
-# or not. Warnings include listed files and files with no row, using the row's
-# ceiling or 1000 respectively. A file over its ceiling is already named by
+# each row whose file is gone, for each file with no row once fewer than 50
+# lines of room are left, and for each generated file, whatever its size, as
+# exempt (it has no ceiling to have room under); with a path ($2), the line for
+# that file alone, small or not. Warnings include listed files and files with
+# no row, using the row's ceiling or 1000 respectively, and no generated file.
+# A file over its ceiling is already named by
 # the budget's verdict. The view judges nothing and passes whatever it finds.
 filesizeview() {
   table=$(mktemp)
+  exempt=$(mktemp)
   printf '%s\n' "$filesizes" >"$table"
+  generatedfiles >"$exempt"
   sizelines | awk -v mode="$1" -v want="$2" '
     BEGIN { limit = 1000; near = 50 }
     FILENAME == ARGV[1] {
@@ -2215,11 +2515,21 @@ filesizeview() {
       }
       next
     }
+    FILENAME == ARGV[2] { gen[$0] = 1; next }
     $2 == "total" || NF < 2 { next }
     {
       n = $1 + 0
       f = $0; sub(/^ *[0-9]+ +/, "", f); sub(/^\.\//, "", f)
       seen[f] = 1
+      # A generated file has no ceiling, so it has no room to warn of and no
+      # line of the table: a report names it exempt, whatever a row says.
+      if (f in gen) {
+        if (mode != "warn" && (want == "" || f == want)) {
+          printf "test: sizes: %s %d lines, generated, exempt\n", f, n
+          shown++
+        }
+        next
+      }
       listed = (f in ceil)
       c = listed ? ceil[f] : limit
       if (mode == "warn") {
@@ -2243,8 +2553,8 @@ filesizeview() {
         shown++
       }
       if (want != "" && !shown) printf "test: sizes: %s is no non-test Go file here\n", want
-    }' "$table" - || true
-  rm -f "$table"
+    }' "$table" "$exempt" - || true
+  rm -f "$table" "$exempt"
 }
 # filesizerewrite lowers the table above to the tree it is run in, in the file
 # of this script itself: `sh .yardr/test sizes --rewrite`, which the landing
@@ -2516,6 +2826,7 @@ whole() {
   again env GOOS=linux go vet ./...
   sleepbudget
   filesizebudget
+  tellsitebudget
   nomarkers
   nohostnames
   # The slowest of the whole-tree checks, so after the ones that fail in
@@ -2672,9 +2983,13 @@ diskfloor() {
     return 0
   fi
   # What diskvolumes could not read it leaves out, and the floor goes on
-  # without it. The first volume under the floor, in its order, is named.
+  # without it. The first volume under the floor, in its order, is named. The
+  # awk takes it with a flag and reads the whole list: one that exits at the
+  # first volume leaves printf, if it has more to write, a pipe nobody reads,
+  # and where SIGPIPE is ignored (a CI runner's children have it so) printf
+  # says "write error: Broken pipe" on stderr, ahead of the refusal (yardr-8x49).
   vols=$(diskvolumes) || true
-  short=$(printf '%s\n' "$vols" | awk -v floor=$((gib * 1048576)) '$2 ~ /^[0-9]+$/ && $2 < floor { print $1, $2; exit }')
+  short=$(printf '%s\n' "$vols" | awk -v floor=$((gib * 1048576)) '!found && $2 ~ /^[0-9]+$/ && $2 < floor { print $1, $2; found = 1 }')
   if [ -z "$short" ]; then
     return 0
   fi
@@ -2735,12 +3050,17 @@ if [ -n "$from" ]; then
 fi
 if [ -z "$from" ]; then
   if [ -n "$YARDR_LANDING" ]; then
+    # The whole suite compared with nothing, and its line says so where the
+    # base and the count stand: a line with neither is a run that stopped
+    # before it compared.
+    compared=" (no comparable base)"
     whole "$base ($said) $no_base_suffix"
   fi
   echo "test: cannot compare with $base ($said): $no_base_reason" >&2
   exit 2
 fi
-since="since $base ($said), from $(git rev-parse --short "$from")"
+fromshort=$(git rev-parse --short "$from")
+since="since $base ($said), from $fromshort"
 # Files a test reads by path. go list knows what a package imports and
 # embeds, not what its tests open (os.ReadFile("../../packs/starter/pack.yaml")),
 # so that is written down here: a path, then the directories of the packages
@@ -2766,7 +3086,7 @@ since="since $base ($said), from $(git rev-parse --short "$from")"
 # docs/architecture.md (arch_test.go): a package the binary imports runs it as
 # an importer does, and contrib's programs are imported by nothing. The test
 # helpers and generators under internal/ (previewtest, scripttest, standin,
-# storetest, rpc/gen, rpc/clientgen, flowdraw/gen) are no dependency of the
+# storetest, rpc/gen, rpc/clientgen) are no dependency of the
 # root package or its tests either, so each has its row too, and a new one
 # needs its row when it is added.
 # It also follows every link of the README to its page and heading, so the
@@ -2778,6 +3098,12 @@ since="since $base ($said), from $(git rev-parse --short "$from")"
 # when the run sets YARDR_CONFORMANCE (below). Nothing imports that package, so
 # its row alone selects it, for any path under conformance/, the README too,
 # because a row cannot tell a path the scripts read from one they do not.
+# This script's own row names internal/dispatch beside the root package: the
+# quiet run reads two of the lines this script prints (quietNotJudged and
+# quietOverBudget there), and that package's TestQuietReadsTheGatesR1Lines reads
+# their echoes from here. A landing of the script alone is the plain selection,
+# so without the row a reworded line would land with its reader unmoved, and the
+# quiet run, after the landing, would be what found it.
 reads='
 packs/starter/                 internal/pack internal/cli
 packs/design/                  contrib/assembly internal/pack
@@ -2793,9 +3119,9 @@ packs/webhook/                 internal/hooks
 packs/template/                internal/pack packs .
 packs/website/                 internal/pack
 packs/testdata/                packs
-.yardr/flows/                 internal/cli internal/dispatch internal/store internal/flowdraw contrib/assembly packs
+.yardr/flows/                 internal/cli internal/dispatch internal/store contrib/assembly packs
 .yardr/security_paths          internal/store
-.yardr/test                    .
+.yardr/test                    . internal/dispatch
 internal/                       internal/rpc
 internal/previewtest/          .
 internal/scripttest/           .
@@ -2803,7 +3129,6 @@ internal/standin/              .
 internal/storetest/            .
 internal/rpc/gen/              .
 internal/rpc/clientgen/        .
-internal/flowdraw/gen/         .
 internal/hooks/testdata/       internal/hooks internal/dispatch
 internal/cli/testdata/         internal/cli
 internal/pack/testdata/        internal/pack
@@ -2845,7 +3170,6 @@ docs/api.md                    internal/rpc
 docs/pack-api.md               internal/cli
 docs/packs.md                  packs
 docs/install.md                contrib/release
-docs/flows/                    internal/flowdraw internal/cli
 docs/                          .
 .yardr/depot.md                -
 .yardr/roles/                  packs
@@ -2866,6 +3190,7 @@ built() {
   again go build ./...
   sleepbudget
   filesizebudget
+  tellsitebudget
   nomarkers
   nohostnames
   staticchecked
@@ -2880,11 +3205,19 @@ built() {
 # compiled changed" and did not race it (yardr-mwh8). A move costs what a
 # deletion does: a landing is the whole suite.
 changed=$(git diff --no-renames --name-only "$from")
+# What the run's test line says it compared with (summary): the base it selected
+# from, the one the first line names, and how many files it found changed since,
+# so that a reader can hold the line against the diff. The files are counted
+# and not listed (the plan names them). An empty list prints one blank line,
+# which grep -c . skips, and then exits 1, which `|| true` keeps from ending
+# the run under set -e: nothing changed counts 0.
+compared=" (base $fromshort, $(printf '%s\n' "$changed" | grep -c . || true) files changed)"
 # A change under conformance/ has its test run whatever else the run tests. A
 # whole suite that go.mod or a stray file chose holds the package too, and
 # without the mark it would skip the package and pass the change unjudged. A
-# deleted path counts, as it does in the table's rows.
-if printf '%s\n' "$changed" | grep -q '^conformance/'; then
+# deleted path counts, as it does in the table's rows. The lines are counted
+# and not stopped at the first, as inlist says.
+if [ "$(printf '%s\n' "$changed" | grep -c '^conformance/')" != 0 ]; then
   YARDR_CONFORMANCE=1
 fi
 # What is tested: the packages that changed, and
@@ -3107,11 +3440,13 @@ if [ -n "$YARDR_LANDING" ]; then
   if [ -z "$changed" ]; then
     whole "nothing changed $since"
   fi
-  file=$(printf '%s\n' "$changed" | grep -x -e go.mod -e go.sum | head -n 1)
+  # The first file of each list is taken with sed -n 1p, which reads the list
+  # to its end, as failed says of its sed.
+  file=$(printf '%s\n' "$changed" | grep -x -e go.mod -e go.sum | sed -n 1p)
   if [ -n "$file" ]; then
     whole "$file changed $since"
   fi
-  file=$(git diff --no-renames --name-only --diff-filter=D "$from" | head -n 1)
+  file=$(git diff --no-renames --name-only --diff-filter=D "$from" | sed -n 1p)
   if [ -n "$file" ]; then
     whole "$file was deleted $since"
   fi
@@ -3120,7 +3455,7 @@ if [ -n "$YARDR_LANDING" ]; then
     read -r file <"$tmp/stray"
     whole "$file, which is read by no known package, changed $since"
   fi
-  file=$(printf '%s\n' "$changed" | grep -x -e '.*\.go' | head -n 1)
+  file=$(printf '%s\n' "$changed" | grep -x -e '.*\.go' | sed -n 1p)
   if [ -n "$file" ]; then
     whole "$file changed $since" selection
   fi
@@ -3143,7 +3478,7 @@ else
   # something is: a run with nothing to test makes no claim about it, as a
   # landing of nothing compiled does not. Every go test below is plain.
   modchanged=
-  if printf '%s\n' "$changed" | grep -qx -e go.mod -e go.sum; then
+  if inlist go.mod "$changed" || inlist go.sum "$changed"; then
     modchanged=1
   else
     pick

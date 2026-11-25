@@ -28,17 +28,33 @@ func TestHarnessFiles(t *testing.T) {
 		if modelLists[h.Kind] == nil {
 			t.Errorf("%s has a file and no way to list its models (modelLists)", h.Kind)
 		}
-		if h.Flags.Model != "--model" {
-			t.Errorf("%s model flag %q, want --model", h.Kind, h.Flags.Model)
+		wantModel := "--model"
+		if h.Kind == "opencode" {
+			// opencode 2.x takes --model on run and mini only, not on the
+			// interactive command yardr starts, so its file names none.
+			wantModel = ""
+		}
+		if h.Flags.Model != wantModel {
+			t.Errorf("%s model flag %q, want %q", h.Kind, h.Flags.Model, wantModel)
+		}
+		// opencode takes its model in its environment instead; no other
+		// kind names one today.
+		if h.Kind == "opencode" {
+			if e := h.Flags.ModelEnv; e == nil || e.Var != "OPENCODE_CONFIG_CONTENT" || e.Value != `{"model":"{model}"}` {
+				t.Errorf("opencode model environment %+v, want OPENCODE_CONFIG_CONTENT={\"model\":\"{model}\"}", e)
+			}
+		} else if h.Flags.ModelEnv != nil {
+			t.Errorf("%s names a model environment %+v, want none", h.Kind, h.Flags.ModelEnv)
 		}
 	}
-	if want := []string{"claude", "codex", "grok", "kimi", "opencode", "pi", "kiro", "muse"}; !slices.Equal(kinds, want) {
+	if want := []string{"claude", "codex", "grok", "kimi", "opencode", "pi", "agy", "kiro", "muse"}; !slices.Equal(kinds, want) {
 		t.Errorf("kinds with a file: %v, want %v", kinds, want)
 	}
 	// How each kind takes an effort, as its file says it: Claude Code and Muse
 	// by a flag, Codex as the setting its -c sets. A kind with no entry takes
 	// none, and a group of it refuses the key.
 	wantEffort := map[string]string{
+		"agy":    "--effort {level} (low medium high xhigh max)",
 		"claude": "--effort {level} (low medium high xhigh max)",
 		"codex":  "-c model_reasoning_effort={level} (low medium high xhigh max ultra)",
 		"muse":   "--reasoning-effort {level} (none minimal low medium high xhigh max ultra)",
@@ -52,7 +68,7 @@ func TestHarnessFiles(t *testing.T) {
 			t.Errorf("%s: effort %q, want %q", h.Kind, got, wantEffort[h.Kind])
 		}
 	}
-	wantProvider := map[string]string{"claude": "Anthropic", "codex": "OpenAI", "grok": "xAI", "kimi": "Moonshot", "kiro": "AWS", "muse": "Meta"}
+	wantProvider := map[string]string{"agy": "Google", "claude": "Anthropic", "codex": "OpenAI", "grok": "xAI", "kimi": "Moonshot", "kiro": "AWS", "muse": "Meta"}
 	for _, h := range Harnesses {
 		if h.Provider != wantProvider[h.Kind] {
 			t.Errorf("%s: provider %q, want %q", h.Kind, h.Provider, wantProvider[h.Kind])
@@ -83,7 +99,7 @@ func TestHarnessFiles(t *testing.T) {
 func TestKindWithNoFile(t *testing.T) {
 	for _, kind := range []string{"gemini", "cursor", "nope", ""} {
 		h, ok := Lookup(kind)
-		if ok || h.Marks != (store.Marks{}) || h.Errors != nil || h.Dialogs != nil || h.Login != nil || h.LoginRecipe != nil || h.LoginEnv != nil || h.Background != nil || h.Model != nil || h.Trust != nil || h.ApiKey != nil || h.Onboarding != nil || h.Label != "" || h.Provider != "" ||
+		if ok || h.Marks.Input != "" || h.Marks.Message != "" || len(h.Marks.PlaceholderSGR) != 0 || h.Errors != nil || h.Dialogs != nil || h.Login != nil || h.LoginRecipe != nil || h.LoginEnv != nil || h.Background != nil || h.Model != nil || h.Trust != nil || h.ApiKey != nil || h.Onboarding != nil || h.Label != "" || h.Provider != "" ||
 			h.Flags.Unattended != nil || h.Flags.Always != nil || h.Flags.Permissions != nil {
 			t.Errorf("%q: %v, %+v; want nothing known", kind, ok, h)
 		}
@@ -172,15 +188,15 @@ func TestLoadOrderAndAliases(t *testing.T) {
 }
 
 // The trust dialogs yardr answers itself: Claude Code's folder-trust
-// question, Kimi's, Codex's and Muse's, each the text that marks it, the
-// answers that accept it and the mark of its selected answer, as the
-// harness prints them (yardr-bgnn, yardr-mdz4, yardr-q7rd). Kimi names two
-// answers: 2.2.0 renamed 'Trust this folder' to 'Trust and continue'
+// question, Kimi's, Codex's, Muse's and agy's, each the text that marks
+// it, the answers that accept it and the mark of its selected answer, as
+// the harness prints them (yardr-bgnn, yardr-mdz4, yardr-q7rd). Kimi names
+// two answers: 2.2.0 renamed 'Trust this folder' to 'Trust and continue'
 // (yardr-k9ew). No other kind names one.
 func TestTrust(t *testing.T) {
 	for _, h := range Harnesses {
-		if (h.Trust != nil) != (h.Kind == "claude" || h.Kind == "kimi" || h.Kind == "codex" || h.Kind == "muse") {
-			t.Errorf("%s: trust %+v; only claude's, kimi's, codex's and muse's files name one", h.Kind, h.Trust)
+		if (h.Trust != nil) != (h.Kind == "claude" || h.Kind == "kimi" || h.Kind == "codex" || h.Kind == "muse" || h.Kind == "agy") {
+			t.Errorf("%s: trust %+v; only claude's, kimi's, codex's, muse's and agy's files name one", h.Kind, h.Trust)
 		}
 	}
 	claude, _ := Lookup("claude")
@@ -198,6 +214,10 @@ func TestTrust(t *testing.T) {
 	muse, _ := Lookup("muse")
 	if muse.Trust == nil || muse.Trust.Dialog != "Do you trust this workspace?" || !slices.Equal(muse.Trust.Answers, []string{"1  Trust and continue"}) || muse.Trust.Cursor != "⟩" {
 		t.Errorf("muse: trust %+v", muse.Trust)
+	}
+	agy, _ := Lookup("agy")
+	if agy.Trust == nil || agy.Trust.Dialog != "Do you trust the contents of this project?" || !slices.Equal(agy.Trust.Answers, []string{"Yes, I trust this folder"}) || agy.Trust.Cursor != ">" {
+		t.Errorf("agy: trust %+v", agy.Trust)
 	}
 }
 
@@ -673,10 +693,11 @@ func TestLoadRefuses(t *testing.T) {
 		"a hint not known":                    {"claude.yaml", "version: 1\nlabel: x\nhints: {idle: x}\n", "field idle not found"},
 		"marks, no input":                     {"claude.yaml", "version: 1\nlabel: x\nmarks: {message: '>'}\n", "without input"},
 		"marks, placeholder without input":    {"claude.yaml", "version: 1\nlabel: x\nmarks: {placeholder: 'ask'}\n", "without input"},
-		"marks, hint colour without input":    {"claude.yaml", "version: 1\nlabel: x\nmarks: {placeholder_sgr: '38;2;1;2;3'}\n", "without input"},
-		"marks, hint colour no colour":        {"claude.yaml", "version: 1\nlabel: x\nmarks: {input: '>', placeholder_sgr: 'grey'}\n", `placeholder_sgr "grey"`},
-		"marks, hint colour too short":        {"claude.yaml", "version: 1\nlabel: x\nmarks: {input: '>', placeholder_sgr: '38;2;1;2'}\n", "want 38;2;r;g;b or 38;5;n"},
-		"marks, hint colour out of range":     {"claude.yaml", "version: 1\nlabel: x\nmarks: {input: '>', placeholder_sgr: '38;5;999'}\n", "want 38;2;r;g;b or 38;5;n"},
+		"marks, hint colour without input":    {"claude.yaml", "version: 1\nlabel: x\nmarks: {placeholder_sgr: ['38;2;1;2;3']}\n", "without input"},
+		"marks, hint colour no colour":        {"claude.yaml", "version: 1\nlabel: x\nmarks: {input: '>', placeholder_sgr: ['grey']}\n", `placeholder_sgr "grey"`},
+		"marks, hint colour too short":        {"claude.yaml", "version: 1\nlabel: x\nmarks: {input: '>', placeholder_sgr: ['38;2;1;2']}\n", "want 38;2;r;g;b or 38;5;n"},
+		"marks, hint colour out of range":     {"claude.yaml", "version: 1\nlabel: x\nmarks: {input: '>', placeholder_sgr: ['38;5;999']}\n", "want 38;2;r;g;b or 38;5;n"},
+		"marks, second hint colour no colour": {"claude.yaml", "version: 1\nlabel: x\nmarks: {input: '>', placeholder_sgr: ['38;2;1;2;3', 'grey']}\n", `placeholder_sgr "grey"`},
 		"trust, no answers":                   {"claude.yaml", "version: 1\nlabel: x\ntrust: {dialog: 'Are you sure?'}\n", "names its text, its accepting answers and its cursor"},
 		"trust, answers empty":                {"claude.yaml", "version: 1\nlabel: x\ntrust: {dialog: 'Are you sure?', answers: [], cursor: '>'}\n", "names its text, its accepting answers and its cursor"},
 		"trust, no dialog":                    {"claude.yaml", "version: 1\nlabel: x\ntrust: {answers: ['Yes']}\n", "names its text, its accepting answers and its cursor"},
@@ -687,6 +708,12 @@ func TestLoadRefuses(t *testing.T) {
 		"model, no field":                     {"claude.yaml", "version: 1\nlabel: x\nmodel: {home: .x, glob: '{session}.jsonl'}\n", "home and field are needed"},
 		"a nameless preset":                   {"claude.yaml", "version: 1\nlabel: x\nflags: {permissions: [{args: [--yes]}]}\n", "without label or args"},
 		"model flag is not a flag":            {"claude.yaml", "version: 1\nlabel: x\nflags: {model: model}\n", "is not a flag"},
+		"model_env, no var":                   {"claude.yaml", "version: 1\nlabel: x\nflags: {model_env: {value: '{model}'}}\n", "flags.model_env.var: the variable that carries the model is needed"},
+		"model_env, a var that is no name":    {"claude.yaml", "version: 1\nlabel: x\nflags: {model_env: {var: '1BAD', value: '{model}'}}\n", `flags.model_env.var: "1BAD" is no name of a variable`},
+		"model_env, no model in the value":    {"claude.yaml", "version: 1\nlabel: x\nflags: {model_env: {var: X_MODEL, value: 'x'}}\n", "flags.model_env.value: {model} is in the value, once"},
+		"model_env, the model twice":          {"claude.yaml", "version: 1\nlabel: x\nflags: {model_env: {var: X_MODEL, value: '{model} {model}'}}\n", "flags.model_env.value: {model} is in the value, once"},
+		"model_env with a model flag":         {"claude.yaml", "version: 1\nlabel: x\nflags: {model: --model, model_env: {var: X_MODEL, value: '{model}'}}\n", "flags.model_env: a kind takes its model by its flag or by its environment, not both"},
+		"model_env, a field not known":        {"claude.yaml", "version: 1\nlabel: x\nflags: {model_env: {var: X_MODEL, value: '{model}', env: X}}\n", "field env not found"},
 		"effort, no flag first":               {"claude.yaml", "version: 1\nlabel: x\nflags: {effort: {args: ['{level}', --effort], levels: [low]}}\n", "flags.effort.args: the first word is the flag"},
 		"effort, no words":                    {"claude.yaml", "version: 1\nlabel: x\nflags: {effort: {levels: [low]}}\n", "flags.effort.args: the first word is the flag"},
 		"effort, no level in the words":       {"claude.yaml", "version: 1\nlabel: x\nflags: {effort: {args: [--effort, max], levels: [low]}}\n", "flags.effort.args: {level} is in one word, once"},
@@ -741,22 +768,22 @@ func TestLoadRefuses(t *testing.T) {
 	}
 }
 
-// A file names its hint's colour as SGR parameters, read in canonical
-// shape; muse's is the grey its 1.4.11 hint is drawn in, and Kiro keeps
+// A file names its hint's colours as SGR parameters, read in canonical
+// shape; muse's are the greys its 1.4.25 hints are drawn in, and Kiro keeps
 // its named words alone.
 func TestPlaceholderSGR(t *testing.T) {
 	hs, err := load(t, map[string]string{
-		"claude.yaml": "version: 1\nlabel: x\nmarks: {input: '>', placeholder_sgr: '38;5;007'}\n",
+		"claude.yaml": "version: 1\nlabel: x\nmarks: {input: '>', placeholder_sgr: ['38;5;007']}\n",
 	})
-	if err != nil || len(hs) != 1 || hs[0].Marks.PlaceholderSGR != "38;5;7" {
-		t.Fatalf("a padded colour: %+v, %v; want 38;5;7", hs, err)
+	if err != nil || len(hs) != 1 || len(hs[0].Marks.PlaceholderSGR) != 1 || hs[0].Marks.PlaceholderSGR[0] != "38;5;7" {
+		t.Fatalf("a padded colour: %+v, %v; want [38;5;7]", hs, err)
 	}
 	muse, ok := Lookup("muse")
-	if !ok || muse.Marks.PlaceholderSGR != "38;2;103;108;116" {
-		t.Errorf("muse's placeholder_sgr: %q, %v", muse.Marks.PlaceholderSGR, ok)
+	if want := []string{"38;2;103;108;116", "38;2;114;116;131"}; !ok || !slices.Equal(muse.Marks.PlaceholderSGR, want) {
+		t.Errorf("muse's placeholder_sgr: %q, %v; want %q", muse.Marks.PlaceholderSGR, ok, want)
 	}
 	kiro, _ := Lookup("kiro")
-	if kiro.Marks.PlaceholderSGR != "" {
+	if len(kiro.Marks.PlaceholderSGR) != 0 {
 		t.Errorf("kiro's placeholder_sgr: %q; its named words still tell it", kiro.Marks.PlaceholderSGR)
 	}
 }

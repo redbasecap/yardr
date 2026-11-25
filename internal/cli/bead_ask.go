@@ -18,7 +18,7 @@ func (a *app) newBeadAskCmd() *cobra.Command {
 	var askRecommend int
 	var askNew bool
 	var askBead store.NewBead
-	var askSecret, askForUser, askForCrew, askAs, askRun, askRunTest, askRunRole, askSecretLogin, askSecretHook, askHookSource string
+	var askSecret, askForUser, askForCrew, askAs, askRun, askRunTest, askRunRole, askSecretLogin, askSecretHook, askHookSource, askSecretGoogle string
 	var askRunFlow string
 	var askRunSays, askRunMakes, askRunWords, askRunFlowLines []string
 	var askSetup string
@@ -36,6 +36,12 @@ with its consequence in a line, the one recommended and why, and the other
 beads it is about. The person answers by picking an option, puts the
 question aside, or declines it (yardr bead answer); the answer is the
 option, so it cannot be misread.
+
+A run ask (--run) is proposed by a crew member or a user of the yard.
+--actor only names who is asking: a name that is no crew member and no user
+of the yard is refused. An ask is refused too when its asker may run the
+command themselves, as the operator may, since a run ask proposes what its
+asker may not run. The refusal says "needs no approval: run it yourself".
 
 The question is the last argument, or - to read the ask from stdin, which is
 how to write one that quotes code or file names: inside a double-quoted
@@ -60,7 +66,7 @@ field continues on the next:
   W: why the recommended one, once (--recommend names it)
   R: the command a run ask proposes, once (--run)
   G: one verbatim word of a general run ask's command, in order (--run-word)
-  T: its test command, once, with R: a depot test (--run-test)
+  T: its test command, once, with R: a depot test or depot add (--run-test)
   S: a says line of a hook add, in order, with R: a hook add (--run-says)
   M: a makes line of one, in order, with R: a hook add (--run-makes)
   F: a line of a flow set's flow, in order, with R: a flow set (--run-flow-line)
@@ -68,10 +74,10 @@ field continues on the next:
 A line with no label among labeled ones, a label among unlabeled ones, an
 unknown label and a label with no words are refused, and nothing is asked.
 With - no text is a flag: --context, --option, --why, --run, --run-word,
---run-test, --run-says, --run-makes, --run-flow and --run-flow-line are refused beside it, and so is --new's -b -,
+--run-test, --run-says, --run-makes and --run-flow-line are refused beside it, and so is --new's -b -,
 which would read the same stdin. The flags that name no prose (--to,
 --recommend, --about, --setup,
---crew and the rest) go beside it. The secret flags name a source, a user, a
+--crew, the files --run-flow and --run-role name and the rest) go beside it. The secret flags name a source, a user, a
 crew member or a login, and never read stdin: the value is typed unseen
 where it is given (yardr bead answer <id> <ask> --secret), so that no
 history keeps it.
@@ -203,17 +209,14 @@ the value reaches: calls made as the user (yardr call --as, yardr source
 check --as), or each message the yard sends that user through a source in
 Go that tells them; never a call without --as, a thread or another file.
 
---secret-login <login> asks for the input of the harness login that waits
-under that reference: the login its leader's input need names. The value
-typed goes to the waiting login and is kept nowhere, not even in the
-answer, which holds the names as any giving does. It is asked of the
+--secret-login <login> asks for the input of the harness login that waits under that reference: the login its leader's input need names. The value
+typed goes to the waiting login and is kept nowhere, not even in the answer, which holds the names as any giving does. It is asked of the
 operator. With --as <user> the login is that user's own, led for the group
 that carries it (yardr user add --login, yardr user login): the code its
 sign-in page shows is the person's to read, so it is asked of them, where
 --to then defaults, or of the operator for them, and they give it. It takes
 no --env, no --for-user and no --for-crew. At the giving it is refused when
-no login waits under the reference, and when the login that waits is
-another user's than the one the ask is for (the --as user, else the
+no login waits under the reference, and when the login that waits is another user's than the one the ask is for (the --as user, else the
 operator): the yard records whose login each wait is when its leader
 registers it, from the group the leader was given, and a giving it refuses
 leaves the wait waiting. The yardmaster asks one per input need of a login
@@ -222,16 +225,31 @@ it relays.
 --secret-hook <hook> --source <source> asks the operator for the signing secret
 of the hook <hook> of the declared source <source>: the value the service signs
 its webhooks with, pasted from where the service shows it.
-The yard's server writes it to the file it owns for the hook,
-<home>/hooks/<hook>.secret (mode 0600), which the hook then names; the
+The yard's server writes it to the file it owns for the hook, <home>/hooks/<hook>.secret (mode 0600), which the hook then names; the
 value is in no note, event, mail, brief or pane, as for --secret, and the
 card says it is read to check each delivery of the hook and by no call or
 thread command. It is asked of the operator, takes no --env, no --for-user,
-no --for-crew and no --as, and is refused for a source the yard does not declare, one whose
-declaration has no hook key, and a hook the yard has already. The hook itself
-is a second ask on the same bead (--run hook add <hook> --source <source>, or
-R: on stdin), asked after this one: the operator gives the secret first, then approves the
-hook, whose approval runs only with the secret standing in its file.
+no --for-crew and no --as, and is refused for a source the yard does not declare, one whose declaration has no hook key,
+a hook that serves another source, or a standing hook with a custom secret file. A standing hook that uses the yard's
+file is rotated by this ask: giving replaces what the file holds. For a new hook, this is the first ask; the hook itself
+is the second ask on the same bead (--run hook add <hook> --source <source>, or R: on stdin): the operator gives the
+secret first, then approves the hook, whose approval runs only with the secret standing in its file.
+
+--secret-google <account> asks for the sign-in of the Google account
+<account>: the output of gws auth export --unmasked, pasted unseen from
+the machine that signed in with gws auth login -s
+gmail,drive,docs,slides,calendar, since gws's browser sign-in waits on
+that machine and cannot be led from a hosted yard. The yard's server
+writes it to the account's credentials file (the yard's own at
+~/.config/gws/credentials.json, a person's at
+~/.config/gws-accounts/<account>/credentials.json, mode 0600), which
+google-mint reads for the yard's Google calls; the value is in no note,
+event, mail, brief or pane, as for --secret, and anything but that
+export's authorized_user JSON is refused. It is asked of the operator
+for the yard's own account. With --as <user> the account is that
+user's own: it is asked of them alone, and they alone give it, the
+operator included among everyone refused, since the paste holds their
+refresh token. It takes no --env, no --for-user and no --for-crew.
 
 --run <command>, or R: <command> on stdin, proposes one yardr command that is
 the operator's to give, for the operator to approve: a crew member that needs it asks this way instead
@@ -263,10 +281,11 @@ else: it never interprets quotes or shell punctuation. A peer-add invite
 stays one word and the yardkey invite reader validates all of it, including
 its URL; line breaks are refused. A comma is accepted only in a list the
 command takes or in the peer-add invite (the parts of tell=, the kinds peer
-allow carries, the grants crew set gives). A depot's test command goes beside --run, in --run-test <command> or T: <command>, since it needs those
+allow carries, the grants crew set gives). A depot's test command, and a depot add's where it names one, go beside --run, in --run-test <command> or T: <command>, since they need those
 characters, and a hook add's says and makes lines go beside it in --run-says <line> and --run-makes <line>
 (S: and M:), each repeatable in order, since a line needs spaces, -> and free-text notes. A flow set's flow goes beside
-it from the file --run-flow <file> names, read once, or as F: lines in order, since a flow line needs the same. It checks the
+it from the file --run-flow <file> names, read once, or as F: lines in order, since a flow line needs the same;
+a flow set-stage's stage file text goes beside it from --run-flow <file> alone, since F: trims lines and drops blank ones. It checks the
 command against the yard as it stands, and refuses one the yard would
 refuse and one that would change nothing (a peer, source, group, crew
 member, user, setting, timer or bead the yard has not, a number out of
@@ -296,9 +315,9 @@ working a bead does not: it says what it needs in a note on the bead.
 yardr command no card of the list fits, as verbatim words, one word a
 use and in order: no line is split and no quoting is parsed, so a
 command with spaces rides as one word. Only the yardmaster files one,
-only for the operator, and only while the operator has turned
-general_cards on in a terminal (yardr settings set general_cards
-true); it is off until then and never rides a card itself. The card
+only for the operator, and only while general_cards stands true: it
+stands true until the operator turns it off in a terminal (yardr
+settings set general_cards false), and never rides a card itself. The card
 shows the command whole and unchecked, one word a line with its
 length, says the yard has not checked it and that no way back is
 shown, and is good for one hour. What the list carries is refused,
@@ -323,7 +342,8 @@ for. --source-base
 <name> calls the pack's region base <name>, for a pack whose source
 declares bases; the card shows the base it will call. A source that declares
 a base_template makes the card ask the host of a server of the operator's own
-above the account, typed with the approval and never named here. --recommend
+above the account, and a path_template the site (one path segment) the calls
+are scoped to beside it, each typed with the approval and never named here. --recommend
 counts the card's preset options as yardr pack show prints them, with
 --why saying why, as on any option ask. The card shows the pack's
 declaration whole with its mint, the account to type unseen or the listed
@@ -391,7 +411,8 @@ depot's flow does not have is refused.
 with the reason on stdin, for a question that is asked no more (it was settled another
 way, or asked again in other words). It is the asker's to do, and the
 operator's; anyone else is refused, since nobody ends a question in the
-person's place. The ask leaves the person's open decisions wherever it
+person's place. A crew member a stage ask addresses takes that ask back
+to pass it up to the stage's people, with its words in the reason's place. The ask leaves the person's open decisions wherever it
 stands and shows among the decided ones as "taken back by <who>: <reason>",
 never as an answer of theirs; the bead's notes say the same. It takes no
 answer afterwards: a pick that arrives late is refused with who took it
@@ -443,6 +464,14 @@ what the person asked does, and this is the asker's own.`,
   yardr bead ask yardr-k3vd - --secret-hook <hook> --source <source> <<'ASK'
   The signing secret for it
   It is shown once where the webhook is made in the service.
+  ASK
+  yardr bead ask yardr-k3vd - --secret-google ada@example.com <<'ASK'
+  The yard's Google sign-in
+  Sign in with gws auth login on your machine, then paste gws auth export --unmasked.
+  ASK
+  yardr bead ask yardr-k3vd - --secret-google ada@example.com --as ada <<'ASK'
+  Your Google sign-in
+  Sign in with gws auth login on your machine, then paste gws auth export --unmasked.
   ASK
   yardr bead ask yardr-k3vd - <<'ASK'
   Q: Set up the webhook?
@@ -504,7 +533,7 @@ what the person asked does, and this is the asker's own.`,
 			if err := askFromStdin(c, args); err != nil {
 				return err
 			}
-			if len(askEnv) > 0 && askSecret == "" && !c.Flags().Changed("secret-login") && !c.Flags().Changed("secret-hook") {
+			if len(askEnv) > 0 && askSecret == "" && !c.Flags().Changed("secret-login") && !c.Flags().Changed("secret-hook") && !c.Flags().Changed("secret-google") {
 				return fmt.Errorf("--env narrows a secret ask: it goes with --secret <source>")
 			}
 			switch {
@@ -539,6 +568,14 @@ what the person asked does, and this is the asker's own.`,
 				return fmt.Errorf("--for-user says whose own address in a source is asked for: it goes with --secret <source>, not --setup")
 			case c.Flags().Changed("setup") && askForCrew != "":
 				return fmt.Errorf("--for-crew says whose own credential in a source is asked for: it goes with --secret <source>, not --setup")
+			case c.Flags().Changed("secret-google") && len(askEnv) > 0:
+				return fmt.Errorf("--secret-google takes no --env: the export is one value")
+			case c.Flags().Changed("secret-google") && askForUser != "":
+				return fmt.Errorf("--secret-google takes no --for-user: a person's own is asked with --as <user>")
+			case c.Flags().Changed("secret-google") && askForCrew != "":
+				return fmt.Errorf("--secret-google takes no --for-crew: a sign-in is the operator's or the person's own")
+			case c.Flags().Changed("secret-google") && (c.Flags().Changed("secret") || c.Flags().Changed("secret-login") || c.Flags().Changed("secret-hook") || c.Flags().Changed("setup") || c.Flags().Changed("depot-push") || c.Flags().Changed("depot-push-off") || c.Flags().Changed("run") || c.Flags().Changed("run-word")):
+				return fmt.Errorf("--secret-google asks for a Google sign-in and the other flag asks for or proposes another thing: one of the two")
 			case !c.Flags().Changed("setup") && (c.Flags().Changed("crew") || c.Flags().Changed("group")):
 				return fmt.Errorf("--crew and --group name who a setup's grants are for: they go with --setup <pack>")
 			case !c.Flags().Changed("setup") && c.Flags().Changed("source-base"):
@@ -549,8 +586,8 @@ what the person asked does, and this is the asker's own.`,
 				return fmt.Errorf("--for-user takes no --env: the source's notify key names the one variable that is a user's address")
 			case askForCrew != "" && askSecret == "" && !c.Flags().Changed("secret-login"):
 				return fmt.Errorf("--for-crew says whose own credential in a source is asked for: it goes with --secret <source>")
-			case askAs != "" && askSecret == "" && !c.Flags().Changed("secret-login"):
-				return fmt.Errorf("--as says whose own credential in a source is asked for: it goes with --secret <source>, or whose login a waiting login is: --secret-login <login>")
+			case askAs != "" && askSecret == "" && !c.Flags().Changed("secret-login") && !c.Flags().Changed("secret-google"):
+				return fmt.Errorf("--as says whose own credential in a source is asked for: it goes with --secret <source>, or whose login a waiting login is: --secret-login <login>, or whose Google sign-in it is: --secret-google <account>")
 			case askForUser != "" && askForCrew != "":
 				return fmt.Errorf("--for-user asks for a user's own address and --for-crew for a crew member's credential: one of the two")
 			case askForUser != "" && askAs != "":
@@ -588,7 +625,7 @@ what the person asked does, and this is the asker's own.`,
 			case c.Flags().Changed("run") && c.Flags().Changed("secret-login"):
 				return fmt.Errorf("--run proposes a command and --secret-login asks for a value: one of the two")
 			case c.Flags().Changed("run") && c.Flags().Changed("secret-hook"):
-				return fmt.Errorf("--run proposes a command and --secret-hook asks for a value: one of the two; ask for the hook's secret and the hook as two asks, the secret first")
+				return fmt.Errorf("--run proposes a command and --secret-hook asks for a value: one of the two; for a new hook, use two asks with the secret first")
 			case c.Flags().Changed("setup") && c.Flags().Changed("run-word"):
 				return fmt.Errorf("--setup sets up a pack and --run-word gives a general card's words: one of the two")
 			case (c.Flags().Changed("depot-push") || c.Flags().Changed("depot-push-off")) && c.Flags().Changed("run-word"):
@@ -601,12 +638,12 @@ what the person asked does, and this is the asker's own.`,
 				return fmt.Errorf("--run-word gives a general card's words whole: --run-test, --run-role, --run-says, --run-makes and --run-flow go beside --run, not beside it")
 			case c.Flags().Changed("run-flow") && c.Flags().Changed("run-flow-line"):
 				return fmt.Errorf("--run-flow reads a flow file and --run-flow-line gives its lines: one of the two")
-			case c.Flags().Changed("run-flow") && (!c.Flags().Changed("run") || !flowSetCommand(askRun)):
-				return fmt.Errorf("--run-flow is the flow the run ask flow set <name> proposes: it goes with that command")
+			case c.Flags().Changed("run-flow") && (!c.Flags().Changed("run") || !flowSetCommand(askRun) && !flowSetStageCommand(askRun)):
+				return fmt.Errorf("--run-flow is the flow the run ask flow set <name> proposes, or the stage file text flow set-stage <flow> <stage> proposes: it goes with one of those commands")
 			case c.Flags().Changed("run-flow-line") && (!c.Flags().Changed("run") || !flowSetCommand(askRun)):
 				return fmt.Errorf("--run-flow-line is a line of the flow the run ask flow set <name> proposes: it goes with that command")
-			case c.Flags().Changed("run-test") && (!c.Flags().Changed("run") || !depotTestCommand(askRun)):
-				return fmt.Errorf("--run-test is the command the run ask depot test <depot> proposes: it goes with that command")
+			case c.Flags().Changed("run-test") && (!c.Flags().Changed("run") || !depotTestCommand(askRun) && !depotAddCommand(askRun)):
+				return fmt.Errorf("--run-test is the command the run ask depot test <depot> or depot add proposes: it goes with that command")
 			case c.Flags().Changed("run-role") && (!c.Flags().Changed("run") || !crewAddCommand(askRun)):
 				return fmt.Errorf("--run-role is the role file the run ask crew add <name> ... carries: it goes with that command")
 			case c.Flags().Changed("run-says") && (!c.Flags().Changed("run") || !hookAddCommand(askRun)):
@@ -665,6 +702,9 @@ what the person asked does, and this is the asker's own.`,
 			}
 			if c.Flags().Changed("secret-hook") {
 				q.Secret = &store.AskSecret{Source: askHookSource, Hook: askSecretHook}
+			}
+			if c.Flags().Changed("secret-google") {
+				q.Secret = &store.AskSecret{Google: askSecretGoogle, As: askAs}
 			}
 			if c.Flags().Changed("setup") {
 				// As named, in the order typed: the yard stores them once
@@ -777,6 +817,14 @@ what the person asked does, and this is the asker's own.`,
 					if askNew {
 						on = fmt.Sprintf("%s created; ask %d on it", b.ID, seq)
 					}
+					if secret.Google != "" {
+						if secret.As != "" {
+							fmt.Fprintf(w, "%s for %s: a secret, the sign-in for %s's Google account %s\n", on, who, secret.As, secret.Google)
+							return
+						}
+						fmt.Fprintf(w, "%s for %s: a secret, the sign-in for the yard's Google account %s\n", on, who, secret.Google)
+						return
+					}
 					if secret.Hook != "" {
 						fmt.Fprintf(w, "%s for %s: a secret, the signing secret for the hook %s (POST /hooks/%s)\n", on, who, secret.Hook, secret.Hook)
 						return
@@ -857,17 +905,18 @@ what the person asked does, and this is the asker's own.`,
 	ask.Flags().StringVar(&askSecret, "secret", "", "ask for the credential of this declared source: answered with a value typed unseen, never with words")
 	ask.Flags().StringVar(&askSecretHook, "secret-hook", "", "with --source: ask for the signing secret of this hook of a declared source: answered with a value typed unseen, kept in the hook's secret file")
 	ask.Flags().StringVar(&askHookSource, "source", "", "with --secret-hook: the declared source the hook serves")
+	ask.Flags().StringVar(&askSecretGoogle, "secret-google", "", "ask for the sign-in of this Google account (its address): the output of gws auth export --unmasked, typed unseen, kept in the account's credentials file; with --as <user>, that user's own, asked of them alone")
 	ask.Flags().StringVar(&askSecretLogin, "secret-login", "", "ask for the input of the harness login waiting under this reference (its leader's input need names it): handed to the login, kept nowhere; with --as, the login is that user's own")
 	ask.Flags().StringVar(&askForUser, "for-user", "", "with --secret: ask for this user's own address in the source (the variable its notify key names), kept in the user's env_file")
 	ask.Flags().StringVar(&askForCrew, "for-crew", "", "with --secret: ask for this crew member's own credential in the source (the variables its credential names), kept in the crew member's env_file")
 	ask.Flags().StringVar(&askAs, "as", "", "with --secret: ask for this user's own credential in the source (the names a call made as them reads), kept in the user's env_file; with --secret-login: the login is this user's own, and theirs to give")
 	ask.Flags().StringVar(&askRun, "run", "", "propose this yardr command for the operator to approve, as it is typed: one the yard runs from a card (yardr bead ask --help; R: on stdin)")
 	ask.Flags().StringArrayVar(&askRunWords, "run-word", nil, "with a general run ask: one verbatim word of the command, in order, no line split and no quoting parsed (repeatable; G: on stdin): the yardmaster proposes any command no card fits, while general_cards stands true")
-	ask.Flags().StringVar(&askRunTest, "run-test", "", "with --run depot test <depot> (R:): the test command the ask proposes (T:), carried beside the command since --run quotes nothing")
+	ask.Flags().StringVar(&askRunTest, "run-test", "", "with --run depot test <depot> or depot add (R:): the test command the ask proposes (T:), carried beside the command since --run quotes nothing")
 	ask.Flags().StringVar(&askRunRole, "run-role", "", "with --run crew add <name> ... (R:): the file whose role text the ask carries beside the command, shown whole on the card")
 	ask.Flags().StringArrayVar(&askRunSays, "run-says", nil, "with --run hook add <name> ... (R:): a says line the ask proposes (S:), repeatable in order, carried beside the command since a line needs spaces, -> and notes")
 	ask.Flags().StringArrayVar(&askRunMakes, "run-makes", nil, "with --run hook add <name> ... (R:): a makes line the ask proposes (M:), repeatable in order, carried beside the command since a line needs spaces and ->")
-	ask.Flags().StringVar(&askRunFlow, "run-flow", "", "with --run flow set <name> (R:): the file whose flow text the ask carries beside the command, shown whole on the card")
+	ask.Flags().StringVar(&askRunFlow, "run-flow", "", "with --run flow set <name> or flow set-stage <flow> <stage> (R:): the file whose flow or stage file text the ask carries beside the command, shown whole on the card")
 	ask.Flags().StringArrayVar(&askRunFlowLines, "run-flow-line", nil, "with --run flow set <name> (R:): one line of the flow the ask carries (F: on stdin), repeatable in order, instead of --run-flow <file>")
 	ask.Flags().StringVar(&askSetup, "setup", "", "set up this pack of kind source (one yardr embeds, or one the operator applied from a directory and left as it was) as one decision: the apply, the account and the grants, with --crew/--group naming who the grants are for")
 	ask.Flags().StringVar(&askDepotPush, "depot-push", "", "turn this depot's push to its origin on as one decision for the operator to approve: YARDR_PUSH=origin in <depot>-assembly's cmd and the pack's helper in the depot's git config, carried out by the server")
@@ -876,7 +925,7 @@ what the person asked does, and this is the asker's own.`,
 	ask.Flags().StringArrayVar(&askGroup, "group", nil, "with --setup: the grants are for this group's sessions (repeatable; at least one of --crew and --group)")
 	ask.Flags().StringVar(&askSourceBase, "source-base", "", "with --setup: the setup's calls go to the pack's region base <name>, for a pack whose source declares bases")
 	ask.Flags().StringSliceVar(&askEnv, "env", nil, "with --secret: only these variables of the source's credential (default the mint's inputs where the declaration names a mint, else every one it names)")
-	ask.Flags().BoolVar(&askTakeBack, "take-back", false, "take an open ask back instead of asking: <id> <ask> <reason|-> (the asker's, or the operator's)")
+	ask.Flags().BoolVar(&askTakeBack, "take-back", false, "take an open ask back instead of asking: <id> <ask> <reason|-> (the asker's, the operator's, or a crew member passing a stage ask up)")
 	ask.Flags().BoolVar(&askNew, "new", false, "the question is about no bead: make one titled with it, and the ask on it, in one write")
 	// The bead of --new, by bead create's flags and defaults.
 	ask.Flags().StringVarP(&askBead.Body, "body", "b", "", "with --new: the bead's description (- reads stdin)")
@@ -884,110 +933,6 @@ what the person asked does, and this is the asker's own.`,
 	ask.Flags().StringVarP(&askBead.Stage, "stage", "s", "", "with --new: place the bead in this stage as a task, routed as bead create's is (decide, for a depot's); default a question nothing routes")
 	ask.Flags().StringSliceVarP(&askBead.Labels, "label", "l", nil, "with --new: the bead's labels")
 	return ask
-}
-
-// giveSecret is yardr bead answer --secret: past the gate of a weighty card
-// (weighed.go), it reads the value of each name the ask asks for as yardr
-// source key reads one, unseen from a terminal or as NAME=value lines from
-// anything else, and gives them to the yard. What
-// it prints is who gave which names and where the credential is set, never
-// a value. A login input is read the same way, with no source to read it
-// against, and handed to the waiting login.
-func (a *app) giveSecret(c *cobra.Command, st store.API, id string, seq uint64) error {
-	secret, err := askedSecret(c.Context(), st, id, seq)
-	if err != nil {
-		return err
-	}
-	// Every secret ask is weighty: its gate comes before a value is typed,
-	// so a person sees what the card weighs first, and a command with no
-	// terminal declines before it reads any.
-	weighed, err := a.gate(c, st, id, seq, "give", "--secret")
-	if err != nil {
-		return err
-	}
-	if secret.Hook != "" {
-		values, err := readHookKeys(secret, c.InOrStdin(), typedUnseen(c.InOrStdin(), c.ErrOrStderr()))
-		if err != nil {
-			return err
-		}
-		keyed, err := st.GiveSecret(c.Context(), id, seq, values, a.who(), weighed)
-		if err != nil {
-			return secretErr(err)
-		}
-		return a.out(c.OutOrStdout(), keyed, func(w io.Writer) {
-			fmt.Fprintf(w, "%s gave %s · it is set in %s\n", a.who(), strings.Join(keyed.Given, " and "), keyed.File)
-			printReach(w, secret)
-		})
-	}
-	if secret.Login != "" {
-		values, err := readLoginKeys(secret, c.InOrStdin(), typedUnseen(c.InOrStdin(), c.ErrOrStderr()))
-		if err != nil {
-			return err
-		}
-		keyed, err := st.GiveSecret(c.Context(), id, seq, values, a.who(), weighed)
-		if err != nil {
-			return secretErr(err)
-		}
-		return a.out(c.OutOrStdout(), keyed, func(w io.Writer) {
-			fmt.Fprintf(w, "%s gave %s · it went to the waiting login %s, and is kept nowhere\n", a.who(), strings.Join(keyed.Given, " and "), keyed.Login)
-		})
-	}
-	if secret.Harness != "" {
-		values, err := readHarnessKeys(secret, c.InOrStdin(), typedUnseen(c.InOrStdin(), c.ErrOrStderr()))
-		if err != nil {
-			return err
-		}
-		keyed, err := st.GiveSecret(c.Context(), id, seq, values, a.who(), weighed)
-		if err != nil {
-			return secretErr(err)
-		}
-		return a.out(c.OutOrStdout(), keyed, func(w io.Writer) {
-			line := fmt.Sprintf("%s gave %s · it is set in %s", a.who(), strings.Join(keyed.Given, " and "), keyed.File)
-			if keyed.Missing != "" {
-				line += " · " + keyed.Missing
-			}
-			fmt.Fprintln(w, line)
-			if keyed.Next != "" {
-				fmt.Fprintln(w, "next: "+keyed.Next)
-			}
-		})
-	}
-	src, err := st.GetSource(c.Context(), secret.Source)
-	if err != nil {
-		return err
-	}
-	d, err := src.Declaration()
-	if err != nil {
-		return err
-	}
-	values, err := readKeys(d, secret.Env, c.InOrStdin(), typedUnseen(c.InOrStdin(), c.ErrOrStderr()), "")
-	if err != nil {
-		return err
-	}
-	keyed, err := st.GiveSecret(c.Context(), id, seq, values, a.who(), weighed)
-	if err != nil {
-		return secretErr(err)
-	}
-	return a.out(c.OutOrStdout(), keyed, func(w io.Writer) {
-		line := fmt.Sprintf("%s gave %s · it is set in %s", a.who(), strings.Join(keyed.Given, " and "), keyed.File)
-		if keyed.Missing != "" {
-			line += " · " + keyed.Missing
-		}
-		fmt.Fprintln(w, line)
-		if keyed.Next != "" {
-			fmt.Fprintln(w, "next: "+keyed.Next)
-		}
-		printReach(w, secret)
-	})
-}
-
-// printReach says after a giving what the value reaches and what it does not,
-// in the lines the card said before it (store.AskSecret.ReachGiven): a value
-// is given for a reason, and the file it is set in is not all it does.
-func printReach(w io.Writer, secret *store.AskSecret) {
-	for _, line := range secret.ReachGiven() {
-		fmt.Fprintln(w, line)
-	}
 }
 
 // approveSetup is yardr bead answer <id> <ask> <n> --secret on a setup

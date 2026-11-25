@@ -14,8 +14,8 @@ const askLabels = "Q: the question, C: a line of context, O: an option as <label
 
 // askStdin is the ask that stdin carried: the texts bead ask otherwise takes
 // as a quoted argument and as the flags --context, --option, --why, --run,
-// --run-word, --run-test, --run-says and --run-makes, written once where the
-// shell expands nothing.
+// --run-word, --run-test, --run-says and --run-makes,
+// written once where the shell expands nothing.
 type askStdin struct {
 	question          string
 	context, options  []string
@@ -39,7 +39,8 @@ type askLine struct {
 // recommended option, at most once; R: the command a run ask proposes, at most
 // once; G: a word of a general run ask's command, repeatable in order and
 // never with R:; T: its depot test command, at most once and only with R:; S: a says
-// line of a hook add, and M: a makes line of one, each repeatable in
+// line of a hook add, M: a makes line of one, and F: a line of a flow set's
+// flow, each repeatable in
 // order and only with R:. Any other first line is the question, and each
 // line after it a line of context, as
 // bead create takes the first line of its stdin for the title and the rest for
@@ -151,7 +152,7 @@ func askFromStdin(c *cobra.Command, args []string) error {
 	if len(args) == 0 || args[len(args)-1] != "-" || c.Flags().Changed("take-back") {
 		return nil
 	}
-	for _, name := range []string{"context", "option", "why", "run", "run-word", "run-test", "run-says", "run-makes", "run-flow", "run-flow-line"} {
+	for _, name := range []string{"context", "option", "why", "run", "run-word", "run-test", "run-says", "run-makes", "run-flow-line"} {
 		if c.Flags().Changed(name) {
 			return fmt.Errorf("with -, put every text on stdin: --%s is given beside it (%s)", name, askLabels)
 		}

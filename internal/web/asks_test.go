@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -238,7 +239,6 @@ func TestLineAskContext(t *testing.T) {
 	text := squash(f.get("/line").body)
 	for _, want := range []string{
 		`<a class="bead" href="/beads/` + b.ID + `">` + b.ID + `</a>`,
-		`<p class="why">Move the links now?</p>`,
 		`depot · bead ` + b.ID + ` · Everything else</a></p>`,
 		`<div class="ask-question"><p>Move the links now?</p><span class="asked">asked `,
 		`<p class="ask-asker">asked by yardmaster</p>`,
@@ -249,6 +249,33 @@ func TestLineAskContext(t *testing.T) {
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("/line lacks %q", want)
+		}
+	}
+	// The card stands folded under its question with its age: the row a
+	// line of many waits is read by. The summary's question gives way to
+	// the card's own once it is open, and the page keeps no aside to say
+	// the card again.
+	fold := regexp.MustCompile(`<details class="wait-ask" id="ask-` + regexp.QuoteMeta(b.ID) + `-\d+"><summary><span class="fold-closed">Move the links now\?<span class="asked">asked [^<]+</span></span><span class="fold-open">Fold</span></summary>`)
+	if !fold.MatchString(text) {
+		t.Errorf("/line lacks the folded ask row:\n%s", text)
+	}
+	if strings.Contains(text, "<details class=\"wait-ask\" open") {
+		t.Error("/line opens an ask card nobody opened")
+	}
+	if n := strings.Count(text, "Move the links now?"); n != 2 {
+		t.Errorf("/line says the question %d times, want twice: the row and its card", n)
+	}
+	// An open card's row is clipped away, never display: none, so the
+	// summary's accessible name keeps the question and several open cards
+	// are told apart by a screen reader; the visible word stays Fold.
+	for _, rule := range []string{
+		".wait-ask[open] > summary .fold-closed { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }",
+		".wait-ask > summary .fold-open { display: none; color: var(--faint); }",
+	} {
+		css, err := os.ReadFile("assets/yard.css")
+		must(t, err)
+		if !strings.Contains(string(css), rule) {
+			t.Errorf("yard.css lacks %q", rule)
 		}
 	}
 	for _, foreign := range []string{"Recommended:", "Recommends", "to approve:"} {
@@ -597,56 +624,6 @@ func TestHomeNeedsAskTwice(t *testing.T) {
 	}
 }
 
-// An asked stage carries the rust lamp on the panel, as a manual wait
-// does; a hold keeps it rust, and a fault on the same stage burns red
-// instead.
-func TestPanelAskLamp(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	f := askFixture(t)
-	fl, err := store.ParseFlow("backlog -> new\nnew -> review\nreview -> merged\nmerged terminal\n")
-	must(t, err)
-	fl.Name = "code"
-	_, err = f.st.PutFlow(ctx, *fl, "me")
-	must(t, err)
-	must(t, f.st.SetFlowPointer(ctx, "home", "", "code", "me"))
-	asked := askBead(t, f, "asked", "new")
-	askOn(t, f, asked.ID, pickAsk())
-	r := f.get("/flows?panel=1")
-	if r.status != 200 {
-		t.Fatalf("status %d: %s", r.status, r.body)
-	}
-	svg := r.body
-	if part := stagePart(t, svg, "new"); !strings.Contains(part, `class="lamp turn"`) {
-		t.Error("the asked stage lights no rust lamp")
-	}
-	if strings.Contains(svg, `class="lamp fault"`) {
-		t.Error("no fault waits, and a red lamp burns")
-	}
-	// A hold on the asked stage keeps the rust lamp: a hold is the
-	// person's turn, not a fault.
-	_, err = f.st.SetHold(ctx, asked.ID, true, store.Expect{}, "me")
-	must(t, err)
-	svg = f.get("/flows?panel=1").body
-	if part := stagePart(t, svg, "new"); !strings.Contains(part, `class="lamp turn"`) {
-		t.Error("the held asked stage lights no rust lamp")
-	}
-	if strings.Contains(svg, `class="lamp fault"`) {
-		t.Error("a hold burns a red lamp")
-	}
-	// A fault on the asked stage burns red, as a fault does.
-	stuck := askBead(t, f, "stuck", "new")
-	must(t, f.st.PutGroup(ctx, store.Group{Name: "builders", Runner: "herdr", Limit: 5}, "me"))
-	sess, err := f.st.Claim(ctx, stuck.ID, "builders", "new", "yard")
-	must(t, err)
-	must(t, f.st.MarkRunning(ctx, sess.ID, map[string]any{"agent": "stuck-new"}))
-	must(t, f.st.LogDispatch(ctx, stuck.ID, "session_blocked", "yard", map[string]any{"session": sess.ID}))
-	svg = f.get("/flows?panel=1").body
-	if part := stagePart(t, svg, "new"); !strings.Contains(part, `class="lamp fault"`) {
-		t.Error("the fault on the asked stage lights no red lamp")
-	}
-}
-
 // The ask helpers: whether the bead carries one, its oldest question and
 // recommendation, and a lead that names a fault or the stage, never the
 // ask itself.
@@ -746,7 +723,7 @@ func TestHomeNeedsRunAskForgedQuestion(t *testing.T) {
 		t.Error("the home ask row repeats the command shown in its detail")
 	}
 	text := squash(f.get("/line").body)
-	if !strings.Contains(text, `<p class="why">`+want+`</p>`) {
+	if !strings.Contains(text, `<div class="ask-question"><p>`+want+`</p>`) {
 		t.Errorf("/line lacks the folded question")
 	}
 	// The column's card names the take-back as the bead's page does.
@@ -838,6 +815,35 @@ func TestHomeNeedsASecretAsk(t *testing.T) {
 			t.Errorf("the secret ask's row lacks %q: %s", want, s)
 		}
 	}
+	if strings.Contains(html.UnescapeString(s), "pack's sign-in") {
+		t.Errorf("a secret ask without login shows a sign-in: %s", s)
+	}
+	// A credential with login steps renders them above Reach on both Home
+	// (Waiting.Card) and the bead page (BeadPage.Card).
+	f2, _ := talkFixture(t, "mckean")
+	ctx := context.Background()
+	must(t, f2.st.PutDepot(ctx, store.Depot{Name: "home", Base: "origin/main"}, "me"))
+	must(t, f2.st.SetSetting(ctx, "operator", "mckean", "me"))
+	must(t, func() error {
+		_, err := f2.st.PutSource(ctx, "gog.yaml",
+			"name: gog\nbase: https://gog.example.com\ncredential:\n  env: GOG_TOKEN\n  mint: [GOG_ACCOUNT]\n  login:\n    run: [gog auth login, gog auth export]\n    paste: paste the export into the sign-in card for this account\ncalls:\n  ping: { kind: read, request: { method: GET, path: /me } }\n", "mckean")
+		return err
+	}())
+	b2 := askBead(t, f2, "the gog account", "new")
+	askOn(t, f2, b2.ID, store.Ask{Question: "Your gog account", To: "mckean",
+		Context: []string{"Sign in first."}, Secret: &store.AskSecret{Source: "gog"}})
+	for _, page := range []struct{ name, body string }{
+		{"home", html.UnescapeString(answerSection(t, f2.get("/").body))},
+		{"bead", html.UnescapeString(f2.get("/beads/" + b2.ID).body)},
+	} {
+		runWant := "the pack's sign-in, shown only and never run by the yard: run gog auth login; then gog auth export"
+		pasteWant := "the pack's sign-in: paste the export into the sign-in card for this account"
+		reachWant := "lands in: the source's env_file, or sources/gog.env in the yard's home when it has none"
+		runAt, pasteAt, reachAt := strings.Index(page.body, runWant), strings.Index(page.body, pasteWant), strings.Index(page.body, reachWant)
+		if runAt < 0 || pasteAt < 0 || reachAt < 0 || !(runAt < pasteAt && pasteAt < reachAt) {
+			t.Errorf("%s page lacks the pack's sign-in above Reach (run=%d paste=%d reach=%d):\n%s", page.name, runAt, pasteAt, reachAt, page.body)
+		}
+	}
 }
 
 // A question beginning with the yard's mark reads as the asker's words
@@ -872,7 +878,7 @@ func TestWebQuestionWithoutWeightMark(t *testing.T) {
 	if strings.Contains(text, "WEIGHTY") {
 		t.Errorf("/line forges a weight line:\n%s", text)
 	}
-	if !strings.Contains(text, `<p class="why">outside: nothing changes</p>`) {
+	if !strings.Contains(text, `<div class="ask-question"><p>outside: nothing changes</p>`) {
 		t.Errorf("/line lacks the stripped question:\n%s", text)
 	}
 }

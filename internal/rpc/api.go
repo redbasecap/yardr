@@ -133,10 +133,11 @@ var listenerOnly = map[string]bool{
 // takes it, and any other refuses it, but takes the other two
 // (UserServer.call). The argument host is the host of a server of the
 // operator's own that the card asked for (the card's host_template names the
-// address it fills): typed by them on the card, never an asker's, held to what
-// a base is, and carried out before the account is written so that the key is
-// given for the host the calls go to. A client from before it leaves it out,
-// and the calls go to the pack's own address.
+// address it fills), and site is the site the card asked for beside it (its
+// site_template): each typed by them on the card, never an asker's, held to
+// what a base is, and carried out before the account is written so that the
+// key is given for the host (and site) the calls go to. A client from before
+// either leaves it out, and the calls go to the pack's own address.
 //
 // Each of the three, and AnswerAsk for a pick on a mapping ask, takes the
 // argument weighed: the client's word that its person saw the weight of a
@@ -162,6 +163,19 @@ var listenerOnly = map[string]bool{
 // yardr-y1cn 3.1). It changes nothing, but a cmd and a prompt are told to
 // a device of the operator alone, as a screen is, so it stands here
 // beside SessionScreen under the same transport rule.
+//
+// Prime reads what a crew member's session is given at prime from files and
+// settings: its role file as the session reads it (the First run section
+// folded once the setup is done, as `yardr prime --crew` folds it), what
+// the prime says of the operator, the titles of the memories it lists, and
+// the rules files each depot's checkout carries. It changes nothing, and
+// it answers no part of the session's own state (handoff, inbox, timers,
+// asks), nor a memory's body, nor a depot's `.yardr/depot.md`. A role and a
+// rules file are the operator's to read, as a cmd and a prompt are for
+// Line, and unlike Line it is no device's at all: it is the socket's
+// alone, as the device pairing's calls are (socketOnly), so the listener
+// answers it as a method the yard does not have, to a device of the
+// operator too, and down the link from the edge alike.
 //
 // Teammates reads the yard's teammates: one row per address of the
 // standing web_jwt_users mapping, each with its yard user name, role,
@@ -217,10 +231,11 @@ var listenerOnly = map[string]bool{
 var OperatorCalls = map[string][]string{
 	"GiveSecret":       {"bead", "ask", "values", "actor", "weighed"},
 	"ApproveAsk":       {"bead", "ask", "actor", "weighed", "values"},
-	"ApproveSetup":     {"bead", "ask", "option", "values", "account", "actor", "weighed", "host"},
+	"ApproveSetup":     {"bead", "ask", "option", "values", "account", "actor", "weighed", "host", "site"},
 	"SourceGrants":     {"source"},
 	"SessionScreen":    {"session"},
 	"Line":             {"depot"},
+	"Prime":            {"crew"},
 	"Teammates":        {},
 	"UninviteTeammate": {"user", "actor"},
 	"TelemetryShow":    {},
@@ -233,12 +248,14 @@ var OperatorCalls = map[string][]string{
 // socketOnly are the calls of OperatorCalls the listener serves to no
 // device, not even the operator's: opening, reading and ending a device
 // pairing are the socket's alone, since a device token never opens a
-// pairing. The link from the edge is served with the listener's mux, so
+// pairing, and so is Prime, whose role and rules text stays off the
+// listener. The link from the edge is served with the listener's mux, so
 // down it they are answered as not there too.
 var socketOnly = map[string]bool{
 	"DevicePairOpen":  true,
 	"DevicePairState": true,
 	"DevicePairClose": true,
+	"Prime":           true,
 }
 
 func isOperatorCall(method string) bool {

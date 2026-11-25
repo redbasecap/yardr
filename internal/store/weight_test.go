@@ -184,9 +184,14 @@ calls:
 		{name: "hook add", run: AskRun{Argv: []string{"hook add bot --source crm"}}, want: []string{WeightTrust}},
 		{name: "user key", run: AskRun{Argv: []string{"user key ada crm"}}, want: []string{WeightCredential}},
 		{name: "user add", run: AskRun{Argv: []string{"user add eve"}}, want: []string{WeightTrust}},
-		{name: "user rm", run: AskRun{Argv: []string{"user rm ada"}}},
 		{name: "user invite", run: AskRun{Argv: []string{"user invite eve --email eve@example.net"}}, want: []string{WeightTrust}},
 		{name: "user uninvite", run: AskRun{Argv: []string{"user uninvite ada"}}},
+		{name: "user login first", run: AskRun{Argv: []string{"user login ada"}}, want: []string{WeightCode, WeightAsUser}},
+		{name: "user login again", prep: func() {
+			if err := y.PutGroup(y.ctx, Group{Name: "ada-builders", Runner: "herdr", Config: map[string]any{"kind": "claude", "login_for": "ada", "env_file": "/ada.env"}}, "mckean"); err != nil {
+				t.Fatal(err)
+			}
+		}, run: AskRun{Argv: []string{"user login ada"}}, want: []string{WeightAsUser}},
 		{name: "crew add", run: AskRun{Argv: []string{"crew add porter kind=claude model=opus preset=auto"}, Role: "You are the porter.\n"}, want: []string{WeightCode}},
 		{name: "group add", run: AskRun{Argv: []string{"group add post --runner exec --set cmd=/srv/bin/post"}}, want: []string{WeightCode}},
 		{name: "group set of a command", run: AskRun{Argv: []string{"group set builders cmd=/srv/bin/post"}}, want: []string{WeightCode}},
@@ -200,7 +205,6 @@ calls:
 		}, run: AskRun{Argv: []string{"crew set yardmaster --unset peers"}}},
 		{name: "user identity", run: AskRun{Argv: []string{"user identity ada --source crm --id 7"}}, want: []string{WeightAsUser}},
 		{name: "user set tell", run: AskRun{Argv: []string{"user set ada tell=asks"}}},
-		{name: "timer rm", run: AskRun{Argv: []string{"timer rm t1"}}},
 	} {
 		if c.prep != nil {
 			c.prep()
@@ -254,7 +258,7 @@ calls:
 	}
 
 	// Every other row is routine whatever it is asked.
-	weighty := []string{"peer add", "peer set", "peer allow", "source set", "source grant", "source add", "pack apply", "hook add", "user key", "user add", "user invite", "crew add", "group add", "group set", "crew set", "user identity", "depot test", "call", "settings set", "hook rm", "user set role", "source move", "user device pair", "route set", "route add", "flow set"}
+	weighty := []string{"peer add", "peer set", "peer allow", "source set", "source grant", "source add", "pack apply", "pack install", "hook add", "user key", "user add", "user invite", "user login", "crew add", "group add", "group set", "crew set", "user identity", "depot test", "depot add", "call", "settings set", "hook rm", "user set role", "source move", "user device pair", "flow set", "flow set-stage"}
 	for _, c := range runList {
 		// The two forms of user set are two rows of one command's words.
 		name := strings.Join(c.words, " ")
@@ -551,13 +555,15 @@ func TestStrongCardApprovesThroughADevice(t *testing.T) {
 	}
 }
 
-// A strong card is approved under a fresh sign-in: the call carries the
+// A weighty card is approved under a fresh sign-in: the call carries the
 // door's statement of who the gateway authenticated and when, judged
 // against the gateway's own window, and the answer's event records the
 // fresh sign-in. One made as another user, with no authentication time,
 // or outside the window is refused, runs nothing, and leaves the ask open;
 // a routine card takes no witness either way. A device's approval claims
-// none, even one whose call carries a witness.
+// none, even one whose call carries a witness. A middle card — weighty
+// but neither trust nor code — is judged and witnessed the same way, on
+// the socket as at the hosted web's door.
 func TestStrongCardApprovesUnderAFreshSignIn(t *testing.T) {
 	// Sequential: the package's fake clock.
 	pinClockFixed(t, askNow)
@@ -568,7 +574,7 @@ func TestStrongCardApprovesUnderAFreshSignIn(t *testing.T) {
 	trust := y.ask(t, listAsk("mckean", "peer allow airy --mail-limit 300"), "yardmaster")
 
 	// With no window set, nothing is fresh.
-	wantWindow := "ask " + itoa(trust) + " is strong (trust): this approval's fresh sign-in is outside the gateway's window, and a strong card is approved in the hosted web only under one inside it. Nothing ran, and the ask stays open"
+	wantWindow := "ask " + itoa(trust) + " is weighty (trust): this approval's fresh sign-in is outside the gateway's window, and a weighty card is approved in the hosted web only under one inside it. Nothing ran, and the ask stays open"
 	if _, err := y.ApproveAsk(fresh("mckean", y.now), y.bead, trust, "mckean", true, nil); err == nil || err.Error() != wantWindow {
 		t.Fatalf("approving a strong card with no window set = %v, want %q", err, wantWindow)
 	}
@@ -597,7 +603,7 @@ func TestStrongCardApprovesUnderAFreshSignIn(t *testing.T) {
 	// Past it, and ahead of the clock past its skew, the approval is
 	// refused, runs nothing, and leaves the ask open.
 	stale := y.ask(t, listAsk("mckean", "peer allow airy --mail-limit 500"), "yardmaster")
-	wantStale := "ask " + itoa(stale) + " is strong (trust): this approval's fresh sign-in is outside the gateway's window, and a strong card is approved in the hosted web only under one inside it. Nothing ran, and the ask stays open"
+	wantStale := "ask " + itoa(stale) + " is weighty (trust): this approval's fresh sign-in is outside the gateway's window, and a weighty card is approved in the hosted web only under one inside it. Nothing ran, and the ask stays open"
 	for name, at := range map[string]time.Time{
 		"a minute past the window": y.now.Add(-16 * time.Minute),
 		"ahead of the clock":       y.now.Add(2 * time.Minute),
@@ -615,11 +621,11 @@ func TestStrongCardApprovesUnderAFreshSignIn(t *testing.T) {
 
 	// With no authentication time, and as another user, the same: refused,
 	// nothing run, the ask open.
-	wantNone := "ask " + itoa(stale) + " is strong (trust): this approval carries a fresh sign-in with no authentication time, and a strong card is approved in the hosted web only under one. Nothing ran, and the ask stays open"
+	wantNone := "ask " + itoa(stale) + " is weighty (trust): this approval carries a fresh sign-in with no authentication time, and a weighty card is approved in the hosted web only under one. Nothing ran, and the ask stays open"
 	if _, err := y.ApproveAsk(fresh("mckean", time.Time{}), y.bead, stale, "mckean", true, nil); err == nil || err.Error() != wantNone {
 		t.Fatalf("approving with no authentication time = %v, want %q", err, wantNone)
 	}
-	wantOther := "ask " + itoa(stale) + " is strong (trust): this approval's fresh sign-in was made as hal, not as mckean. Nothing ran, and the ask stays open"
+	wantOther := "ask " + itoa(stale) + " is weighty (trust): this approval's fresh sign-in was made as hal, not as mckean. Nothing ran, and the ask stays open"
 	if _, err := y.ApproveAsk(fresh("hal", y.now), y.bead, stale, "mckean", true, nil); err == nil || err.Error() != wantOther {
 		t.Fatalf("approving under another user's sign-in = %v, want %q", err, wantOther)
 	}
@@ -637,6 +643,57 @@ func TestStrongCardApprovesUnderAFreshSignIn(t *testing.T) {
 	}
 	if ev := lastAnswer(t, y); Via(ev) != "phone" || Witness(ev) != "" {
 		t.Fatalf("the device's approval is via %q witnessed %q, want phone with no witness", Via(ev), Witness(ev))
+	}
+
+	// A middle card (outside alone) is refused under a stale, timeless or
+	// another user's sign-in in weighty words, runs nothing, and then
+	// approves under a fresh one, witnessed as a strong card's is.
+	middle := y.ask(t, listAsk("mckean", "source grant crm note --crew yardmaster"), "yardmaster")
+	if got := weightClasses(y.asked(t, middle).Ask.Weight); !slices.Equal(got, []string{WeightOutside}) {
+		t.Fatalf("the middle card weighs %v, want outside alone", got)
+	}
+	wantMiddleStale := "ask " + itoa(middle) + " is weighty (outside): this approval's fresh sign-in is outside the gateway's window, and a weighty card is approved in the hosted web only under one inside it. Nothing ran, and the ask stays open"
+	if _, err := y.ApproveAsk(fresh("mckean", y.now.Add(-time.Hour)), y.bead, middle, "mckean", true, nil); err == nil || err.Error() != wantMiddleStale {
+		t.Fatalf("approving a middle card under a stale sign-in = %v, want %q", err, wantMiddleStale)
+	}
+	wantMiddleNone := "ask " + itoa(middle) + " is weighty (outside): this approval carries a fresh sign-in with no authentication time, and a weighty card is approved in the hosted web only under one. Nothing ran, and the ask stays open"
+	if _, err := y.ApproveAsk(fresh("mckean", time.Time{}), y.bead, middle, "mckean", true, nil); err == nil || err.Error() != wantMiddleNone {
+		t.Fatalf("approving a middle card with no authentication time = %v, want %q", err, wantMiddleNone)
+	}
+	wantMiddleOther := "ask " + itoa(middle) + " is weighty (outside): this approval's fresh sign-in was made as hal, not as mckean. Nothing ran, and the ask stays open"
+	if _, err := y.ApproveAsk(fresh("hal", y.now), y.bead, middle, "mckean", true, nil); err == nil || err.Error() != wantMiddleOther {
+		t.Fatalf("approving a middle card under another user's sign-in = %v, want %q", err, wantMiddleOther)
+	}
+	if got := y.grants(t); len(got) != 0 {
+		t.Fatalf("a refused middle approval granted %v", got)
+	}
+	if r := y.asked(t, middle); r.State != AskOpen {
+		t.Fatalf("the middle ask is %s after the refusals, want it open", r.State)
+	}
+	if _, err := y.ApproveAsk(fresh("mckean", y.now), y.bead, middle, "mckean", true, nil); err != nil {
+		t.Fatalf("approving a middle card under a fresh sign-in = %v", err)
+	}
+	if got := y.grants(t); len(got) != 1 {
+		t.Fatalf("the fresh middle approval granted %v", got)
+	}
+	if ev := lastAnswer(t, y); Witness(ev) != WitnessFreshSignIn || Via(ev) != "" {
+		t.Fatalf("the middle fresh approval's event is witnessed %q via %q, want a fresh sign-in with no device", Witness(ev), Via(ev))
+	}
+	// On the socket the same middle card records a terminal, and through
+	// a device it claims no witness.
+	socketMiddle := y.ask(t, listAsk("mckean", "source set crm updates_per_hour=20"), "yardmaster")
+	if _, err := y.ApproveAsk(y.ctx, y.bead, socketMiddle, "mckean", true, nil); err != nil {
+		t.Fatalf("approving a middle card on the socket = %v", err)
+	}
+	if ev := lastAnswer(t, y); Witness(ev) != WitnessTerminal || Via(ev) != "" {
+		t.Fatalf("the middle socket approval's event is witnessed %q via %q, want terminal with no device", Witness(ev), Via(ev))
+	}
+	deviceMiddle := y.ask(t, listAsk("mckean", "source set crm updates_per_hour=30"), "yardmaster")
+	if _, err := y.ApproveAsk(WithVia(y.ctx, "mckean", "phone"), y.bead, deviceMiddle, "mckean", true, nil); err != nil {
+		t.Fatalf("approving a middle card through a device = %v", err)
+	}
+	if ev := lastAnswer(t, y); Via(ev) != "phone" || Witness(ev) != "" {
+		t.Fatalf("the middle device approval is via %q witnessed %q, want phone with no witness", Via(ev), Witness(ev))
 	}
 
 	// A routine card takes no witness: it approves with one on the call as
@@ -692,6 +749,69 @@ func TestWeightIsHeldAtGiving(t *testing.T) {
 	}
 	if text, err := os.ReadFile(file); err != nil || string(text) != "CRM_TOKEN=tok\n" {
 		t.Fatalf("the file holds %q (%v)", text, err)
+	}
+
+	// A giving that carries a fresh sign-in is judged by it as a strong
+	// card's approval is, though a secret ask is not strong: another
+	// user's, none, and one outside the gateway's window each refuse
+	// before anything is written, and a good one records the witness.
+	if err := y.SetSetting(y.ctx, WebJWTPrivilegedSessionMaxAgeSetting, "15m", "mckean"); err != nil {
+		t.Fatal(err)
+	}
+	freshSeq := y.ask(t, secretAsk("crm"), "yardmaster")
+	answersBefore := len(answerNotes(t, y))
+	for _, c := range []struct {
+		name string
+		ctx  context.Context
+		want string
+	}{
+		{"another user", WithFreshWitness(y.ctx, "ada", time.Now()),
+			"ask " + itoa(freshSeq) + " is weighty (credential): this giving's fresh sign-in was made as ada, not as mckean. Nothing was given, and the ask stays open"},
+		{"no authentication time", WithFreshWitness(y.ctx, "mckean", time.Time{}),
+			"ask " + itoa(freshSeq) + " is weighty (credential): this giving carries a fresh sign-in with no authentication time, and a secret is given in the hosted web only under one. Nothing was given, and the ask stays open"},
+		{"outside the window", WithFreshWitness(y.ctx, "mckean", time.Now().Add(-time.Hour)),
+			"ask " + itoa(freshSeq) + " is weighty (credential): this giving's fresh sign-in is outside the gateway's window, and a secret is given in the hosted web only under one inside it. Nothing was given, and the ask stays open"},
+	} {
+		if _, err := y.GiveSecret(c.ctx, y.bead, freshSeq, map[string]string{"CRM_TOKEN": "fresh-tok"}, "mckean", true); err == nil || err.Error() != c.want {
+			t.Fatalf("%s: giving a secret = %v, want %q", c.name, err, c.want)
+		} else if strings.Contains(err.Error(), "fresh-tok") {
+			t.Fatalf("%s: the refusal repeats the value: %v", c.name, err)
+		}
+	}
+	if text, err := os.ReadFile(file); err != nil || string(text) != "CRM_TOKEN=tok\n" {
+		t.Fatalf("a refused fresh giving left the file holding %q (%v)", text, err)
+	}
+	if got := len(answerNotes(t, y)); got != answersBefore {
+		t.Fatalf("a refused fresh giving left %d answers, want %d", got, answersBefore)
+	}
+	if r := y.asked(t, freshSeq); r.State != AskOpen {
+		t.Fatalf("the ask is %s after the refusals, want it open", r.State)
+	}
+	if _, err := y.GiveSecret(WithFreshWitness(y.ctx, "mckean", time.Now()), y.bead, freshSeq, map[string]string{"CRM_TOKEN": "fresh-tok"}, "mckean", true); err != nil {
+		t.Fatal(err)
+	}
+	if text, err := os.ReadFile(file); err != nil || string(text) != "CRM_TOKEN=fresh-tok\n" {
+		t.Fatalf("the file holds %q (%v)", text, err)
+	}
+	if ev := lastAnswer(t, y); Witness(ev) != WitnessFreshSignIn || Via(ev) != "" {
+		t.Fatalf("the fresh giving's event is witnessed %q via %q, want a fresh sign-in with no device", Witness(ev), Via(ev))
+	}
+	// Through a device the same witness is judged and claims none, and
+	// with no witness on the call a giving claims none either.
+	deviceSeq := y.ask(t, secretAsk("crm"), "yardmaster")
+	phone := WithFreshWitness(WithVia(y.ctx, "mckean", "phone"), "mckean", time.Now())
+	if _, err := y.GiveSecret(phone, y.bead, deviceSeq, map[string]string{"CRM_TOKEN": "device-tok"}, "mckean", true); err != nil {
+		t.Fatal(err)
+	}
+	if ev := lastAnswer(t, y); Via(ev) != "phone" || Witness(ev) != "" {
+		t.Fatalf("the device giving is via %q witnessed %q, want phone with no witness", Via(ev), Witness(ev))
+	}
+	plainSeq := y.ask(t, secretAsk("crm"), "yardmaster")
+	if _, err := y.GiveSecret(y.ctx, y.bead, plainSeq, map[string]string{"CRM_TOKEN": "plain-tok"}, "mckean", true); err != nil {
+		t.Fatal(err)
+	}
+	if ev := lastAnswer(t, y); Witness(ev) != "" || Via(ev) != "" {
+		t.Fatalf("the plain giving's event is witnessed %q via %q, want neither", Witness(ev), Via(ev))
 	}
 }
 
@@ -753,6 +873,100 @@ func TestWeightIsHeldAtAMappingPick(t *testing.T) {
 	}
 	if u, err := y.GetUser(y.ctx, "ada"); err != nil || !u.IsIn("talk", "U1") {
 		t.Fatalf("the pick with the word left ada's identities %+v (%v)", u.Identities, err)
+	}
+	// On the socket the pick is witnessed a terminal's, as a weighty
+	// approval's is.
+	witnessOn := func(bead string) Event {
+		t.Helper()
+		notes, err := y.Notes(y.ctx, bead)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var seq uint64
+		for _, n := range notes {
+			if n.Kind != NoteAnswer {
+				continue
+			}
+			if a, err := ParseAnswer(n); err == nil && a.Option != 0 && !a.TakeBack {
+				seq = n.Seq
+			}
+		}
+		evs, err := y.Events(y.ctx, bead, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := len(evs) - 1; i >= 0; i-- {
+			switch n := evs[i].Data["note"].(type) {
+			case uint64:
+				if n == seq {
+					return evs[i]
+				}
+			case float64:
+				if uint64(n) == seq {
+					return evs[i]
+				}
+			}
+		}
+		t.Fatalf("no answer event on %s", bead)
+		return Event{}
+	}
+	if ev := witnessOn(card.Bead); Witness(ev) != WitnessTerminal || Via(ev) != "" {
+		t.Fatalf("the socket pick's event is witnessed %q via %q, want terminal with no device", Witness(ev), Via(ev))
+	}
+
+	// A pick that carries a fresh sign-in is judged by it as a secret
+	// giving is, though a mapping card is not strong: another user's,
+	// none, and one outside the gateway's window each refuse before
+	// anything is written, and a good one records the witness. A pick
+	// that carries none behaves as the socket's always has.
+	if err := y.SetSetting(y.ctx, WebJWTPrivilegedSessionMaxAgeSetting, "15m", "mckean"); err != nil {
+		t.Fatal(err)
+	}
+	freshCard := claimCard(t, y, "U3")
+	freshPick := pickFor(t, y, freshCard.Bead, "ada")
+	for _, c := range []struct {
+		name string
+		ctx  context.Context
+		want string
+	}{
+		{"another user", WithFreshWitness(y.ctx, "ada", time.Now()),
+			"ask " + itoa(freshCard.Ask) + " is weighty (as-user): this pick's fresh sign-in was made as ada, not as mckean. Nothing was written, and the ask stays open"},
+		{"no authentication time", WithFreshWitness(y.ctx, "mckean", time.Time{}),
+			"ask " + itoa(freshCard.Ask) + " is weighty (as-user): this pick carries a fresh sign-in with no authentication time, and a mapping card is picked in the hosted web only under one. Nothing was written, and the ask stays open"},
+		{"outside the window", WithFreshWitness(y.ctx, "mckean", time.Now().Add(-time.Hour)),
+			"ask " + itoa(freshCard.Ask) + " is weighty (as-user): this pick's fresh sign-in is outside the gateway's window, and a mapping card is picked in the hosted web only under one inside it. Nothing was written, and the ask stays open"},
+	} {
+		if err := y.AnswerAsk(c.ctx, freshCard.Bead, freshCard.Ask, freshPick, "", "mckean", true); err == nil || err.Error() != c.want {
+			t.Fatalf("%s: picking a mapping card = %v, want %q", c.name, err, c.want)
+		}
+	}
+	// An unauthorized actor carrying a bad fresh witness on an unguarded
+	// pick is turned away by the policy first, never told about the witness.
+	if err := y.AnswerAsk(WithFreshWitness(y.ctx, "ada", time.Time{}), freshCard.Bead, freshCard.Ask, freshPick, "", "ada", true); err == nil ||
+		!strings.Contains(err.Error(), "mckean, the operator") || strings.Contains(err.Error(), "fresh sign-in") {
+		t.Fatalf("unauthorized pick with bad witness = %v, want policy refusal", err)
+	}
+	if u, err := y.GetUser(y.ctx, "ada"); err != nil || u.IsIn("talk", "U3") {
+		t.Fatalf("a refused fresh pick wrote ada's identity %+v (%v)", u.Identities, err)
+	}
+	wantCardOpen(t, y, freshCard.Bead)
+	if err := y.AnswerAsk(WithFreshWitness(y.ctx, "mckean", time.Now()), freshCard.Bead, freshCard.Ask, freshPick, "", "mckean", true); err != nil {
+		t.Fatalf("picking under a fresh sign-in = %v", err)
+	}
+	if u, err := y.GetUser(y.ctx, "ada"); err != nil || !u.IsIn("talk", "U3") {
+		t.Fatalf("the fresh pick left ada's identities %+v (%v)", u.Identities, err)
+	}
+	if ev := witnessOn(freshCard.Bead); Witness(ev) != WitnessFreshSignIn || Via(ev) != "" {
+		t.Fatalf("the fresh pick's event is witnessed %q via %q, want a fresh sign-in with no device", Witness(ev), Via(ev))
+	}
+	// Through a device the same witness is judged and claims none.
+	deviceCard := claimCard(t, y, "U4")
+	phone := WithFreshWitness(WithVia(y.ctx, "mckean", "phone"), "mckean", time.Now())
+	if err := y.AnswerAsk(phone, deviceCard.Bead, deviceCard.Ask, pickFor(t, y, deviceCard.Bead, "ada"), "", "mckean", true); err != nil {
+		t.Fatalf("picking through a device with a witness = %v", err)
+	}
+	if ev := witnessOn(deviceCard.Bead); Via(ev) != "phone" || Witness(ev) != "" {
+		t.Fatalf("the device pick is via %q witnessed %q, want phone with no witness", Via(ev), Witness(ev))
 	}
 }
 

@@ -7,7 +7,7 @@ line takes the same work through a pull request on GitHub:
 [the public line](#the-public-line).
 
 ```
-small, specified: backlog ──pick──▶ siding ──folded──▶ ready ──release by hand──▶ new
+small, specified: backlog ──pick──▶ siding ──folded──▶ new
 small, shaped:                    shape ──small──▶ siding
 backlog ──pick──▶ shape ──shaper──▶ new ──builder──▶ review ──▶ review-security ──▶ approved ──assembly──▶ merged on main
    ▲                       ▲                 │              │                 │
@@ -42,8 +42,9 @@ heavier one, a duplicate, or one needing a decision only a person can make
 goes to `decide` on `question`, with the question asked on the bead first.
 
 Small beads wait in `siding` for company, and leave folded into one carrier
-([Folding beads](#folding-beads)), which waits in `ready` for a person to
-send it to `new`. A bead in `siding` or `ready` that needs reshaping goes
+([Folding beads](#folding-beads)), which goes to `new` by itself; `ready`
+stays for a bead a person sends to `new` by hand. A bead in `siding` or
+`ready` that needs reshaping goes
 back to `backlog`, by hand.
 
 ### Cycles of blockers
@@ -1002,6 +1003,7 @@ yardr bead note webapp-3 -                   # evidence, the words on stdin ("te
 yardr bead advance webapp-3 --to review      # hand to the next stage
 yardr bead advance webapp-3 --to new --note -  # note and move in one write
 yardr bead close webapp-3 --reason "merged"
+yardr bead rm mem-k3f9                       # remove a memory for good (the operator's; asks for a typed yes)
 yardr bead hold webapp-3                     # stop routing; a human looks
 ```
 
@@ -1129,6 +1131,34 @@ And `bead close` prints what
 the close releases: `releases <ids>` names the open targets whose gate
 this close opens, so the yardmaster sees the consequence before
 deciding.
+
+### Removing a memory
+
+A close keeps everything: a closed memory still holds its title, its body
+and its notes, and still lists under `-a`. `yardr bead rm <id>` removes a
+memory for good instead. Its row, its handle and its notes go, and the
+text of its events is redacted where they stand: the event rows keep
+their seqs, kinds, actors and times, so the log's order and every inbox
+entry stand, with `[removed]` where the memory's words were, the old
+values an `updated` event kept among them. There is no undo and no
+tombstone: the id names nothing afterwards, and a reference to it fails
+as any unknown bead's does. The files a note carried are freed by the
+store's blob prune once nothing names them. Copies on other yards, in
+backups and in device caches are not taken back.
+
+```sh
+yardr bead rm mem-k3f9          # asks for the word yes, typed
+yardr bead rm mem-k3f9 --yes    # no asking; prints what went
+```
+
+It prints what went: the row and handle, how many notes, and how many
+events were redacted (`--json` carries the same). Removing is the
+operator's alone, and asks for the word `yes` typed, or `--yes`;
+anything else removes nothing. Memories alone can be removed — any other
+bead is closed instead — and a removal is refused, naming what holds the
+memory, while a dep edge joins it either way, an open ask on another
+bead cites it, a session on it is live, or it is a child of a train:
+clear that first, as each refusal says.
 
 ### Bead history
 
@@ -1750,7 +1780,7 @@ retitling one bead and closing the others:
 
 ```sh
 $ yardr bead fold yardr-ab12 yardr-cd34 yardr-ef56
-yardr-k9p2 folded from yardr-ab12, yardr-cd34, yardr-ef56 (3 points, size:medium difficulty:1), in ready
+yardr-k9p2 folded from yardr-ab12, yardr-cd34, yardr-ef56 (3 points, size:medium difficulty:1), in new
 ```
 
 The new bead is the **carrier** and each bead it was made of a **member**.

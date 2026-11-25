@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"yardr.dev/yardr/docs"
+	"yardr.dev/yardr/internal/pack"
 	"yardr.dev/yardr/packs"
 )
 
@@ -134,8 +135,10 @@ func TestDocsShowPrintsOneSection(t *testing.T) {
 // no heading holds any more sends the yardmaster to an error at the moment
 // it needs the page, so every pointer in a shipped role resolves: the page
 // is one the binary carries and the words, where there are any, match a
-// section's heading. For pointers in the three cut yardmaster roles whose
-// reference moved out of the role (design yardr-2vy0 3.2, 3.5), the section
+// section's heading. The packs' yardmaster sections are read the same way,
+// since prime prints them beside the role. For pointers in the cut
+// yardmaster text whose reference moved out of the role (design
+// yardr-2vy0 3.2, 3.5) — the base the starter's text became — the section
 // also holds what stood only in the role, so a heading over text that never
 // landed fails.
 func TestShippedRolePointersResolve(t *testing.T) {
@@ -146,14 +149,11 @@ func TestShippedRolePointersResolve(t *testing.T) {
 	}
 	// What each moved pointer's section holds, as words of the section read
 	// as one line (a wrapped paragraph breaks nothing), and the words it must
-	// not hold. Each pack's yardmaster role is cut to its core, so each is held
-	// to the list. The starter's must carry every pointer in it; the website's
-	// carries the ones its own brief needs (it has no train flow, so no
-	// wagons), and the contributors' the ones its own, in its own words, with
-	// one of its own: its pack's page, where nothing was moved.
+	// not hold. The yardmaster base is cut to its core, so it is held to
+	// the list: it must carry every pointer in it.
 	type moved struct{ has, lacks []string }
 	const starter = "starter/roles/yardmaster.md"
-	cut := map[string]bool{starter: true, "website/roles/yardmaster.md": true, "contributors/roles/yardmaster.md": true}
+	cut := map[string]bool{starter: true}
 	want := map[string]moved{
 		"setup as a conversation": {has: []string{
 			"reads `yardr doctor` when it starts",
@@ -323,7 +323,7 @@ func TestShippedRolePointersResolve(t *testing.T) {
 			"`user add` alone makes an inbox and admits no one",
 			"the operator's approval is the whole invite: no request to the people who make yardr is needed",
 			"or an operator with `--role operator`",
-			"A plain user already under the name goes first (`yardr user rm <name>`, also a run ask)",
+			"A plain user already under the name goes first (`yardr user rm <name>`, on the general card)",
 			"where the yard has no edge, a person comes in by `yardr user add` and a device pairing",
 			"R: user uninvite eve",
 			"A new address gets a set-password mail from the edge; an address with a verified account gets none, so whoever invited the person tells them to sign in",
@@ -356,11 +356,24 @@ func TestShippedRolePointersResolve(t *testing.T) {
 	// single spaces first, so a pointer the role wraps across lines is read.
 	pointer := regexp.MustCompile("`yardr docs ([A-Za-z]+)((?: [^`\"]+)?)`")
 	var found int
-	for _, path := range roles {
+	// The starter's yardmaster text is the base yardr carries now, not a
+	// file in the pack: it is read here under the starter's name, as the
+	// role it was. The packs' yardmaster sections are read beside the
+	// roles, since prime prints them with the role.
+	sections, err := fs.Glob(packs.FS, "*/sections/*.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	texts := map[string][]byte{starter: pack.YardmasterBase()}
+	for _, path := range append(roles, sections...) {
 		text, err := fs.ReadFile(packs.FS, path)
 		if err != nil {
 			t.Fatal(err)
 		}
+		texts[path] = text
+	}
+	for _, path := range append(append(roles, sections...), starter) {
+		text := texts[path]
 		for _, m := range pointer.FindAllStringSubmatch(strings.Join(strings.Fields(string(text)), " "), -1) {
 			found++
 			page, words := m[1], strings.TrimSpace(m[2])

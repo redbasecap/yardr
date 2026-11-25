@@ -46,7 +46,7 @@ var eventDataTold = map[string][]string{
 	"closed":             {"reason", "group", "originator"},
 	"reopened":           {},
 	"updated":            {"title", "body", "depot", "type", "priority", "labels_added", "labels_removed"},
-	"originator_changed": {"from", "to", "approved"},
+	"originator_changed": {"from", "to"},
 	"held":               {"session", "peer", "outcome"},
 	"unheld":             {},
 	"released":           {"reason"},
@@ -64,9 +64,10 @@ var eventDataTold = map[string][]string{
 	"handoff":            {"note", "session"},
 	"note_told":          {"note", "session", "delivery"},
 	"note_untold":        {"note", "session"},
+	"note_replaced":      {"seq", "file"},
 	"bad_template":       {"stage"},
 	"ask_unreachable":    {"member", "stage"},
-	"ask_stale":          {"ask", "source", "seen", "answer", "ask_session"},
+	"ask_stale":          {"ask", "kind", "name", "source", "seen", "answer", "ask_session"},
 	"move_refused":       {"agent", "group", "reason", "session", "session_bead", "stage"},
 
 	// Sessions: the claim of a bead, and what the daemon found out about the
@@ -91,7 +92,7 @@ var eventDataTold = map[string][]string{
 	"session_prompt_gave_up":   {"agent", "crew", "user", "deliveries", "session", "submits", "typed"},
 	"session_harness_starting": {"crew", "user", "session"},
 	"session_harness_dialog":   {"crew", "user", "group", "kind", "prompt_look", "session", "stage", "version"},
-	"session_harness_error":    {"crew", "user", "group", "kind", "model", "prompt_shown", "reason", "resets_at", "session", "stage", "tries", "wakes_at", "window"},
+	"session_harness_error":    {"crew", "user", "group", "kind", "model", "fallback_model", "prompt_shown", "reason", "resets_at", "session", "stage", "tries", "wakes_at", "window"},
 	"session_harness_retry":    {"crew", "user", "group", "kind", "of", "reason", "session", "stage", "try", "window"},
 	"workspace_kept":           {"session"},
 	"workspace_removed":        {"session"},
@@ -129,6 +130,7 @@ var eventDataTold = map[string][]string{
 	"waited":              {"group", "since", "stage", "waited"},
 	"hook_rule":           {"action", "bead", "depot", "event", "hook", "linked_author", "originator_rule", "outcome", "route", "seq", "stage", "train", "worker"},
 	"make_refused":        {"action", "bead", "depot", "event", "hook", "seq", "stage"},
+	"flap_held":           {"event", "hook", "made", "seq"},
 
 	// Crew: who runs, and in what state. The handle of a session is the
 	// directory it started in and the yardr it was told to run.
@@ -144,7 +146,7 @@ var eventDataTold = map[string][]string{
 	"crew_gave_up":           {"crew", "failures", "user"},
 	"crew_start_tail":        {"crew", "user"},
 	"crew_blocked":           {"agent", "crew", "user"},
-	"crew_restart_requested": {"approved", "crew", "user"},
+	"crew_restart_requested": {"crew", "user"},
 	"crew_rotation_asked":    {"crew", "user"},
 	"crew_context_asked":     {"crew", "pct", "window", "user"},
 	"open_threads_granted":   {"crew", "pack", "sources"},
@@ -159,10 +161,10 @@ var eventDataTold = map[string][]string{
 	// so are the files the login of a removed user named, which stay on disk
 	// when the user goes: the names of what went with them are the yard's news.
 	"user_added":            {"user", "approved"},
-	"user_removed":          {"user", "approved", "as_grants", "devices", "unexposed", "unreached", "untrusted", "login.groups", "login.routes", "login.crew"},
+	"user_removed":          {"user", "as_grants", "devices", "unexposed", "unreached", "untrusted", "login.groups", "login.routes", "login.crew"},
 	"user_set":              {"user", "approved", "notify", "tell"},
 	"device_added":          {"device", "user", "pairing"},
-	"device_removed":        {"device", "user", "approved"},
+	"device_removed":        {"device", "user"},
 	"device_channel_pinned": {"device", "user", "pinned"},
 	"device_pair_opened":    {"device", "user", "pairing", "expires", "wrong_codes"},
 	"device_pair_refused":   {"device", "user", "pairing", "reason", "wrong_codes"},
@@ -185,7 +187,7 @@ var eventDataTold = map[string][]string{
 	// calls, the file a hook's secret is read from and the values a call was
 	// made with are an operator's.
 	"source_added":         {"source", "calls", "limits", "replaced", "approved"},
-	"source_removed":       {"source", "approved"},
+	"source_removed":       {"source"},
 	"source_set":           {"source", "approved", "calls_per_hour", "updates_per_hour"},
 	"source_granted":       {"approved", "source", "what", "as", "crew", "group"},
 	"source_call":          {"as", "attempt", "by", "bytes", "call", "crew", "group", "kind", "ms", "params", "session", "source", "status"},
@@ -205,13 +207,13 @@ var eventDataTold = map[string][]string{
 	// are held.
 	"depot_updated":        {"depot", "kind", "base", "approved"},
 	"depot_removed":        {"depot", "flow_pointers", "routes"},
-	"flow_set":             {"flow"},
+	"flow_set":             {"flow", "stage"},
 	"flow_removed":         {"flow"},
 	"flow_pointer_set":     {"depot", "flow", "type"},
 	"flow_pointer_cleared": {"depot", "type"},
 	"group_set":            {"limit", "members", "name", "runner"},
 	"group_removed":        {"name", "released", "routes"},
-	"group_renamed":        {"approved", "beads", "from", "grants", "members", "packs", "routes", "sessions", "subscriptions", "to"},
+	"group_renamed":        {"beads", "from", "grants", "members", "packs", "routes", "sessions", "subscriptions", "to"},
 	"route_added":          {"id", "stage", "group", "priority", "label", "labels", "bead_priority", "type", "depot", "originator"},
 	"route_removed":        {"id", "stage", "group", "priority", "label", "labels", "bead_priority", "type", "depot", "originator"},
 	"route_set":            {},
@@ -270,7 +272,7 @@ var eventDataTold = map[string][]string{
 	"timer_set":     {"timer", "to", "due", "ends", "every"},
 	"timer":         {"by", "last", "late", "set_at", "timer", "to", "to_user"},
 	"timer_dropped": {"by", "timer", "to"},
-	"timer_removed": {"approved", "by", "timer", "to"},
+	"timer_removed": {"by", "timer", "to"},
 
 	// The yard: its daemon, its server, its disk and its upgrades. The
 	// directories of a backup, of the build cache and of a yard's home, and

@@ -58,8 +58,9 @@ func readCalls(t *testing.T, path string) string {
 // checkEnvStart asserts the env file's entry reached the socket request
 // that opens the pane (paneCall: workspace.create or tab.create) and
 // nothing that went through the herdr binary, where a command line shows
-// in ps; that the identity was not overridden by the file; and that the
-// value shows in neither the handle nor the logs.
+// in ps; that the identity was not overridden by the file; that the pane
+// has no editor for git to open (a crew member's and a bead agent's alike);
+// and that the value shows in neither the handle nor the logs.
 func checkEnvStart(t *testing.T, calls, paneCall, actor string, handle map[string]any, logs string) {
 	t.Helper()
 	env := envOf(apiCall(t, calls, paneCall))
@@ -68,6 +69,9 @@ func checkEnvStart(t *testing.T, calls, paneCall, actor string, handle map[strin
 	}
 	if env["YARDR_ACTOR"] != actor {
 		t.Errorf("env file overrode the identity: %v", env)
+	}
+	if env["GIT_EDITOR"] != "true" {
+		t.Errorf("%s lacks GIT_EDITOR=true, so a git rebase --continue in it parks on an editor: %v", paneCall, env)
 	}
 	if cli := cliCalls(calls); strings.Contains(cli, "--env") || strings.Contains(cli, envSecret) || strings.Contains(cli, "LINEAR_API_KEY") {
 		t.Errorf("the pane environment went on a command line:\n%s", cli)
@@ -300,9 +304,9 @@ func TestStartCrewSetsMemoryOff(t *testing.T) {
 	}
 }
 
-// A file others can read, or none at all, refuses the start before herdr is
-// asked for anything, as Blocked, and the error shows no value.
-func TestEnvFileRefusedBlocksStart(t *testing.T) {
+// An env file the session cannot read refuses the start before herdr is
+// asked for anything, as Blocked.
+func TestStartRefusalsBlockBeforeHerdr(t *testing.T) {
 	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "nope.env")
 	for name, path := range map[string]string{"0644": envFileT(t, 0o644), "0640": envFileT(t, 0o640),
@@ -326,6 +330,92 @@ func TestEnvFileRefusedBlocksStart(t *testing.T) {
 		if strings.Contains(logs.String(), envSecret) {
 			t.Errorf("%s: logs show the value", name)
 		}
+	}
+}
+
+// opencode 2.x takes no --model on its interactive command, so a group of
+// that kind carries its model in the pane's OPENCODE_CONFIG_CONTENT, a
+// whole config as JSON, and its agent starts with no --model word. No
+// model sets no entry, as no flag is passed then either.
+func TestHerdrStartSetsModelEnv(t *testing.T) {
+	t.Parallel()
+	start := func(t *testing.T, cfg map[string]any, metadata map[string]any) (map[string]string, string) {
+		t.Helper()
+		wt := seedEmptyRepo(t)
+		h, calls, _ := envHerdr(t, wt)
+		h.YardHome = t.TempDir()
+		job := dispatch.Job{
+			Bead:    store.Bead{ID: "yard-13", Stage: "build", Metadata: metadata},
+			Group:   store.Group{Name: "g", Config: cfg},
+			Depot:   &store.Depot{Name: "yard", Path: t.TempDir(), Base: "main"},
+			Session: store.Session{ID: "s1"},
+		}
+		if _, err := h.Start(context.Background(), job); err != nil {
+			t.Fatal(err)
+		}
+		raw := readCalls(t, calls)
+		return envOf(apiCall(t, raw, "tab.create")), cliCalls(raw)
+	}
+	env, cli := start(t, map[string]any{"kind": "opencode", "model": "opencode/big-pickle"}, nil)
+	if env["OPENCODE_CONFIG_CONTENT"] != `{"model":"opencode/big-pickle"}` {
+		t.Errorf("opencode tab.create lacks its model entry: %v", env)
+	}
+	if strings.Contains(cli, "--model") {
+		t.Errorf("opencode's agent was started with a model flag:\n%s", cli)
+	}
+	if env, _ = start(t, map[string]any{"kind": "opencode", "model": "opencode/big-pickle"}, map[string]any{"model": "other/model"}); env["OPENCODE_CONFIG_CONTENT"] != `{"model":"other/model"}` {
+		t.Errorf("the bead's model did not win in the entry: %v", env)
+	}
+	env, _ = start(t, map[string]any{"kind": "opencode"}, nil)
+	if _, ok := env["OPENCODE_CONFIG_CONTENT"]; ok {
+		t.Errorf("no model set an entry: %v", env)
+	}
+	env, cli = start(t, map[string]any{"kind": "claude", "model": "opus"}, nil)
+	if _, ok := env["OPENCODE_CONFIG_CONTENT"]; ok {
+		t.Errorf("claude tab.create carries opencode's entry: %v", env)
+	}
+	if !strings.Contains(cli, "--model opus") {
+		t.Errorf("claude's agent was not started with its model flag:\n%s", cli)
+	}
+	// A dir depot's session takes the same entry through startDir.
+	wt := seedEmptyRepo(t)
+	h, calls, _ := envHerdr(t, wt)
+	h.YardHome = t.TempDir()
+	dir := t.TempDir()
+	if _, err := h.Start(context.Background(), dispatch.Job{
+		Bead:    store.Bead{ID: "yard-13", Stage: "build"},
+		Group:   store.Group{Name: "g", Config: map[string]any{"kind": "opencode", "model": "opencode/big-pickle"}},
+		Depot:   &store.Depot{Name: "yard", Path: dir, Base: "main", Kind: store.DepotDir},
+		Session: store.Session{ID: "s1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if env := envOf(apiCall(t, readCalls(t, calls), "tab.create")); env["OPENCODE_CONFIG_CONTENT"] != `{"model":"opencode/big-pickle"}` {
+		t.Errorf("dir depot tab.create lacks its model entry: %v", env)
+	}
+}
+
+func TestStartCrewSetsModelEnv(t *testing.T) {
+	t.Parallel()
+	start := func(t *testing.T, cfg map[string]any) map[string]string {
+		t.Helper()
+		h, calls, _ := envHerdr(t, "")
+		r := store.CrewMember{Name: "r", Dir: t.TempDir(), Config: cfg}
+		if _, err := h.StartCrew(context.Background(), r, ""); err != nil {
+			t.Fatal(err)
+		}
+		return envOf(apiCall(t, readCalls(t, calls), "workspace.create"))
+	}
+	if env := start(t, map[string]any{"kind": "opencode", "model": "opencode/big-pickle"}); env["OPENCODE_CONFIG_CONTENT"] != `{"model":"opencode/big-pickle"}` {
+		t.Errorf("opencode workspace.create lacks its model entry: %v", env)
+	}
+	env := start(t, map[string]any{"kind": "opencode"})
+	if _, ok := env["OPENCODE_CONFIG_CONTENT"]; ok {
+		t.Errorf("no model set an entry: %v", env)
+	}
+	env = start(t, map[string]any{"kind": "claude", "model": "opus"})
+	if _, ok := env["OPENCODE_CONFIG_CONTENT"]; ok {
+		t.Errorf("claude workspace.create carries opencode's entry: %v", env)
 	}
 }
 

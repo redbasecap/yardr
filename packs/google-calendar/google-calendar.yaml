@@ -39,7 +39,12 @@ credential:
   mint:
     - name: GOOGLE_ACCOUNT
       secret: false               # an address, asked in the clear
+      bound: true                 # one holder: the yard or one user, never both
   mint_command: [google-mint]       # the file beside this one; the source's own mint_command wins
+  mint_scopes: [https://www.googleapis.com/auth/calendar.events, https://www.googleapis.com/auth/calendar.calendarlist.readonly]  # the scopes the hosted mint must see granted before it holds a token
+  login:
+    run: [gws auth login -s calendar, gws auth export --unmasked]
+    paste: paste the whole output of gws auth export --unmasked into the Google sign-in card for this account, and give no other card the export
 check: calendars
 calls:
   events:
@@ -108,3 +113,7 @@ calls:
       query: { sendUpdates: "none", fields: "id,summary,start,end,htmlLink" }   # no mail about the change
       body: { summary: "{summary}", start: { dateTime: "{start}" }, end: { dateTime: "{end}" }, description: "{description}", location: "{location}" }   # a field left out leaves its key, so only what is given changes; a start or end left out leaves an empty start or end, which the patch reads as no change there
     answer: { select: [id, summary, start, end, htmlLink] }
+
+# The mint runs gws on this machine; GWS_BIN may name another copy.
+needs:
+  - { program: gws, env: GWS_BIN, install: [install-gws] }

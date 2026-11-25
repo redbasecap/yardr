@@ -106,7 +106,7 @@ func TestDeclaredSourceRefusals(t *testing.T) {
 		msg         string
 	}{
 		{name: "a limits key", declaration: strings.Replace(pushover, "calls:\n", "limits:\n  hour: 60\ncalls:\n", 1),
-			file: "sources/pushover.yaml", key: "limits", line: 6, msg: "a declaration in a pack has name, about, base, bases, base_template, credential, check, idempotency, calls, notify and no other key"},
+			file: "sources/pushover.yaml", key: "limits", line: 6, msg: "a declaration in a pack has name, about, base, bases, base_template, path_template, credential, check, idempotency, calls, notify and no other key"},
 		// limits stays refused in every pack: it is the yard's to ask.
 		{name: "a limits command", declaration: pushover + "limits:\n  command: [/opt/q, \"{provider}\"]\n  kinds: { kimi: kimi }\n",
 			file: "sources/pushover.yaml", key: "limits", line: 25, msg: "what else a source may have is set in the yard, by its operator"},
@@ -116,19 +116,21 @@ func TestDeclaredSourceRefusals(t *testing.T) {
 		// the source's issues as a bead's link: for a pack of kind source,
 		// refused in a pack for a depot.
 		{name: "a thread key in a git pack", yaml: strings.Replace(smallDeclared, "name: small", "name: small\nkind: git", 1), declaration: pushover + "thread:\n  reply: [linear/thread, reply]\n  place: team\n",
-			file: "sources/pushover.yaml", key: "thread", line: 25, msg: "hear, hook, thread, link, identity, events and git are for a pack of kind source"},
+			file: "sources/pushover.yaml", key: "thread", line: 25, msg: "hear, hook, thread, link, identity, events, git and needs are for a pack of kind source"},
 		{name: "a link key", declaration: pushover + "link:\n  host: linear.app\n  issue: '^/x'\n  fixed: y\n  thread: z\n",
-			file: "sources/pushover.yaml", key: "link", line: 25, msg: "hear, hook, thread, link, identity, events and git are for a pack of kind source"},
+			file: "sources/pushover.yaml", key: "link", line: 25, msg: "hear, hook, thread, link, identity, events, git and needs are for a pack of kind source"},
 		// What a source sends in: the command that turns a verified body
 		// into the envelope. For a pack of kind source, as thread and link.
 		{name: "a hook key", declaration: pushover + "hook:\n  bodies: unique\n  normalize: [pushover/normalize]\n",
-			file: "sources/pushover.yaml", key: "hook", line: 25, msg: "hear, hook, thread, link, identity, events and git are for a pack of kind source"},
+			file: "sources/pushover.yaml", key: "hook", line: 25, msg: "hear, hook, thread, link, identity, events, git and needs are for a pack of kind source"},
 		{name: "an identity key", declaration: pushover + "identity:\n  fold: lower\n",
-			file: "sources/pushover.yaml", key: "identity", line: 25, msg: "hear, hook, thread, link, identity, events and git are for a pack of kind source"},
+			file: "sources/pushover.yaml", key: "identity", line: 25, msg: "hear, hook, thread, link, identity, events, git and needs are for a pack of kind source"},
 		{name: "an events key", declaration: pushover + "events:\n  runs: [workflow_run]\n",
-			file: "sources/pushover.yaml", key: "events", line: 25, msg: "hear, hook, thread, link, identity, events and git are for a pack of kind source"},
+			file: "sources/pushover.yaml", key: "events", line: 25, msg: "hear, hook, thread, link, identity, events, git and needs are for a pack of kind source"},
 		{name: "a git key", declaration: pushover + "git:\n  credential: [pushover/git-credential]\n",
-			file: "sources/pushover.yaml", key: "git", line: 25, msg: "hear, hook, thread, link, identity, events and git are for a pack of kind source"},
+			file: "sources/pushover.yaml", key: "git", line: 25, msg: "hear, hook, thread, link, identity, events, git and needs are for a pack of kind source"},
+		{name: "a needs key", declaration: pushover + "needs:\n  - { program: gws, install: [install-gws] }\n",
+			file: "sources/pushover.yaml", key: "needs", line: 25, msg: "hear, hook, thread, link, identity, events, git and needs are for a pack of kind source"},
 		{name: "a key nobody knows", declaration: pushover + "retries: 3\n",
 			file: "sources/pushover.yaml", key: "retries", line: 25, msg: "and no other key"},
 		{name: "what yardr source add refuses", declaration: strings.Replace(pushover, "https://api.pushover.net/1", "http://api.pushover.net/1", 1),
@@ -494,6 +496,64 @@ func TestApplyReplacesADeclaredSourceAndThePlanShowsWhatChanges(t *testing.T) {
 		got = find(t, plan, "source", "pushover")
 		if got.Action != pack.Change || !slices.Equal(got.Changes, step.want) {
 			t.Fatalf("base_template %s: source = %s %+v, want a change of %+v", step.name, got.Action, got.Changes, step.want)
+		}
+		apply(t, st, plan, nil)
+	}
+
+	// Every key of the credential that alters a call is a change of its own,
+	// beside the credential's line, and never the line that says the pack
+	// declares the same calls: the scopes the hosted mint must see granted,
+	// whether a path may carry the credential, which of a mint's inputs one
+	// holder keeps, which of them is no secret and the command a mint runs.
+	// The input marked no secret is the account the hosted mint mints for, so
+	// one of its rows moves the mark to the other input, a pack that differs
+	// in nothing else. Each side is the key as the line shows it, "" for none,
+	// the names of several joined with ", ". A mint's inputs and its command
+	// stand under a mint, so those rows follow the one that adds it, which
+	// says only that the credential's own line changed. A command is a file
+	// beside the declaration, so its rows carry it, and its first and last
+	// rows say the file's hash with it.
+	scopes, scopes2 := "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive.readonly"
+	const account, key = "PUSHOVER_ACCOUNT", "PUSHOVER_KEY"
+	mint := "  mint: [" + account + ", " + key + "]\n"
+	script := "#!/bin/sh\necho token\n"
+	sum := sha256.Sum256([]byte(script))
+	sha := "sha256 " + hex.EncodeToString(sum[:])[:12]
+	withKeys := func(keys string) string {
+		return strings.Replace(changed, "credential:\n  env: PUSHOVER_TOKEN\n", "credential:\n  env: PUSHOVER_TOKEN\n"+keys, 1)
+	}
+	for _, step := range []struct {
+		name, text, script string
+		want               []pack.Diff
+	}{
+		{"mint_scopes added", withKeys("  mint_scopes: [" + scopes + "]\n"), "", []pack.Diff{{Field: "mint_scopes", Old: "", New: scopes}}},
+		{"mint_scopes moved", withKeys("  mint_scopes: [" + scopes2 + ", " + scopes + "]\n"), "", []pack.Diff{{Field: "mint_scopes", Old: scopes, New: scopes2 + ", " + scopes}}},
+		{"mint_scopes dropped", changed, "", []pack.Diff{{Field: "mint_scopes", Old: scopes2 + ", " + scopes, New: ""}}},
+		{"in_path added", withKeys("  in_path: true\n"), "", []pack.Diff{{Field: "in_path", Old: "", New: "true"}}},
+		{"in_path dropped", changed, "", []pack.Diff{{Field: "in_path", Old: "true", New: ""}}},
+		{"mint inputs added", withKeys(mint), "", []pack.Diff{{Field: "credential", Old: "PUSHOVER_TOKEN", New: "minted from " + account + " and " + key + "; PUSHOVER_TOKEN"}}},
+		{"bound added", withKeys("  mint: [{ name: " + account + ", bound: true }, " + key + "]\n"), "", []pack.Diff{{Field: "bound", Old: "", New: account}}},
+		{"bound moved", withKeys("  mint: [{ name: " + account + ", bound: true }, { name: " + key + ", bound: true }]\n"), "", []pack.Diff{{Field: "bound", Old: account, New: account + ", " + key}}},
+		{"bound dropped", withKeys(mint), "", []pack.Diff{{Field: "bound", Old: account + ", " + key, New: ""}}},
+		{"not_secret added", withKeys("  mint: [{ name: " + account + ", secret: false }, " + key + "]\n"), "", []pack.Diff{{Field: "not_secret", Old: "", New: account}}},
+		{"not_secret moved", withKeys("  mint: [" + account + ", { name: " + key + ", secret: false }]\n"), "", []pack.Diff{{Field: "not_secret", Old: account, New: key}}},
+		{"not_secret second input added", withKeys("  mint: [{ name: " + account + ", secret: false }, { name: " + key + ", secret: false }]\n"), "", []pack.Diff{{Field: "not_secret", Old: key, New: account + ", " + key}}},
+		{"not_secret dropped", withKeys(mint), "", []pack.Diff{{Field: "not_secret", Old: account + ", " + key, New: ""}}},
+		{"mint_command added", withKeys(mint + "  mint_command: [pushover/mint]\n"), script, []pack.Diff{
+			{Field: "mint_command", Old: "", New: "pushover/mint"}, {Field: "file pushover/mint", Old: "", New: sha}}},
+		{"mint_command moved", withKeys(mint + "  mint_command: [pushover/mint, --refresh]\n"), script, []pack.Diff{
+			{Field: "mint_command", Old: "pushover/mint", New: "pushover/mint --refresh"}}},
+		{"mint_command dropped", withKeys(mint), "", []pack.Diff{
+			{Field: "mint_command", Old: "pushover/mint --refresh", New: ""}, {Field: "file pushover/mint", Old: sha, New: ""}}},
+	} {
+		files := declaredFiles(smallDeclared, step.text)
+		if step.script != "" {
+			files["sources/pushover/mint"] = step.script
+		}
+		plan = build(t, st, load(t, writePack(t, files)), o)
+		got = find(t, plan, "source", "pushover")
+		if got.Action != pack.Change || !slices.Equal(got.Changes, step.want) {
+			t.Fatalf("%s: source = %s %+v, want a change of %+v", step.name, got.Action, got.Changes, step.want)
 		}
 		apply(t, st, plan, nil)
 	}

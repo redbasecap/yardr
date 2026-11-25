@@ -1,7 +1,6 @@
 // The carrying out of an approved apply (design yardr-bht9 3.5): an
-// approval of a pack apply, of a source add that names commands, of a
-// source rm whose command files are to go, of an up, or of a setup ask is
-// recorded first (ApproveAsk and ApproveSetup,
+// approval of a pack apply, of a source add that names commands, of an
+// up, or of a setup ask is recorded first (ApproveAsk and ApproveSetup,
 // with the answer holding CarryPending) and carried out straight after
 // by the yard's server, because applying a pack writes files and makes
 // many store calls and cannot be one write of the store, and neither can
@@ -106,6 +105,11 @@ type Carry struct {
 	// before the account is written, so that the key is given for the
 	// host the calls go to. "" for none.
 	Host string `json:"host,omitempty"`
+	// Site is the site a setup approval gave: the carrying out sets each
+	// source the pack carries whose declaration names a path template to
+	// it, before the account is written, so that the key is given for the
+	// host and site the calls go to. "" for none.
+	Site string `json:"site,omitempty"`
 	// TeammateEmails are the addresses a teammate invite or removal
 	// reports, held at approval: a removal's stand in the mapping the
 	// carrying out itself removes, so a report still owed after that
@@ -135,10 +139,10 @@ func carryKey(bead string, ask uint64) string { return join(bead, seqKey(ask)) }
 
 // needsCarry says whether approving the run ask was records it to be
 // carried out: a pack apply always, an up, which starts the yard's own
-// processes after the write, a source add whose declaration names
-// command files the approval's write cannot write or that replaces a
-// source whose command copies stand (they are made anew), a source rm
-// whose command copies are to go, and a teammate invite or removal, whose
+// processes after the write, a depot add, whose clone is no store write,
+// a source add whose declaration names command files the approval's
+// write cannot write or that replaces a source whose command copies
+// stand (they are made anew), and a teammate invite or removal, whose
 // edge report cannot be one store write.
 func needsCarry(was AskRun) bool {
 	if was.General != nil {
@@ -150,11 +154,14 @@ func needsCarry(was AskRun) bool {
 	if len(was.Argv) == 1 && was.Argv[0] == "up" {
 		return true
 	}
+	if IsDepotAddCarry(was.Argv) {
+		return true
+	}
 	if len(was.Argv) >= 2 && was.Argv[0] == "user" && (was.Argv[1] == "invite" || was.Argv[1] == "uninvite") {
 		return true
 	}
-	if len(was.Argv) == 3 && was.Argv[0] == "source" && was.Argv[1] == "rm" {
-		return was.Seen["source "+was.Argv[2]+" files"] != ""
+	if IsUserLoginCarry(was.Argv) {
+		return true
 	}
 	return len(was.Argv) >= 2 && was.Argv[0] == "source" && was.Argv[1] == "add" &&
 		len(was.Carried) == 1 && (len(was.Carried[0].Files) > 0 || len(was.Carried[0].Inventory) > 0)
@@ -228,6 +235,9 @@ func carryHandledHere(rec *Carry) bool {
 	if len(rec.Argv) == 1 && rec.Argv[0] == "up" {
 		return true
 	}
+	if IsDepotAddCarry(rec.Argv) {
+		return true
+	}
 	if len(rec.Argv) < 2 {
 		return false
 	}
@@ -239,11 +249,14 @@ func carryHandledHere(rec *Carry) bool {
 	if len(rec.Argv) >= 3 && rec.Argv[0] == "user" && (rec.Argv[1] == "invite" || rec.Argv[1] == "uninvite") {
 		return true
 	}
+	if IsUserLoginCarry(rec.Argv) {
+		return true
+	}
 	if len(rec.Argv) < 3 {
 		return false
 	}
 	return rec.Argv[0] == "pack" && rec.Argv[1] == "apply" ||
-		rec.Argv[0] == "source" && (rec.Argv[1] == "add" || rec.Argv[1] == "rm")
+		rec.Argv[0] == "source" && rec.Argv[1] == "add"
 }
 
 // KeySourceForSetup writes a setup's account through the secret path and

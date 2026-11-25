@@ -9,8 +9,6 @@ import (
 	"strings"
 
 	bolt "go.etcd.io/bbolt"
-
-	"yardr.dev/yardr/internal/source"
 )
 
 // Identity is who a crew member is in a source, so a delivery can tell when it
@@ -112,32 +110,6 @@ func whereKeys(source string) []string {
 		return append(slices.Clone(WhereKeys), extra...)
 	}
 	return WhereKeys
-}
-
-// hearSubscribeKeys holds a declaration's hear.subscribe to the filters a
-// subscription to the source may take: a claim approval subscribes the
-// yard's hearer with them beside the claimed address, and a key no
-// subscription takes would fail every claim. The keys are whereKeysTx's
-// without the store: the source's own hook keys beside the hook
-// sources' and its adapter's.
-func hearSubscribeKeys(d *source.Declaration) error {
-	if d.Hear == nil || len(d.Hear.Subscribe) == 0 {
-		return nil
-	}
-	keys := whereKeys(d.Name)
-	if d.Hook != nil {
-		for _, k := range d.Hook.Keys {
-			if !slices.Contains(keys, k) {
-				keys = append(keys, k)
-			}
-		}
-	}
-	for _, k := range slices.Sorted(maps.Keys(d.Hear.Subscribe)) {
-		if !slices.Contains(keys, k) {
-			return fmt.Errorf("hear.subscribe names %q, and a subscription to %s filters on %s", k, d.Name, strings.Join(keys, ", "))
-		}
-	}
-	return nil
 }
 
 // whereKeysTx are the keys a subscription to source may filter on: whereKeys,
@@ -252,8 +224,8 @@ func (s Subscription) same(o Subscription) bool {
 // SetIdentity records who the crew member, or else the user, called name
 // is in source; a zero identity removes it. The two share one space of
 // names, so a name is one of them. A crew member's is the operator's to
-// say, and a run ask may propose it (setCrewIdentity); a user's is theirs
-// and the operator's to say (mayIdentify).
+// say alone (setCrewIdentity); a user's is theirs and the operator's to say
+// (mayIdentify).
 func (s *Store) SetIdentity(ctx context.Context, name, source string, id Identity, actor string) error {
 	if source == "" {
 		return fmt.Errorf("identity: source is required")
@@ -272,7 +244,7 @@ func (s *Store) SetIdentity(ctx context.Context, name, source string, id Identit
 		})
 	}
 	return s.write(func(w *wtx) error {
-		return w.setCrewIdentity(ctx, name, source, id, actor, nil)
+		return w.setCrewIdentity(ctx, name, source, id, actor)
 	})
 }
 
@@ -298,6 +270,7 @@ func (w *wtx) setUserIdentity(ctx context.Context, name, source string, id Ident
 	if err := checkUserIdentityOneToOne(w.Tx, name, source, id); err != nil {
 		return nil, err
 	}
+	before := cloneUser(u)
 	kind, data, err := setIdentityIn(&u.Identities, name, source, id, "user", "user")
 	if err != nil {
 		return nil, err
@@ -309,6 +282,8 @@ func (w *wtx) setUserIdentity(ctx context.Context, name, source string, id Ident
 		return nil, err
 	}
 	if err := w.event("", kind, actor, data); err != nil {
+		return nil, err
+	} else if err := w.tellUserStale(name, before, u, actor); err != nil {
 		return nil, err
 	}
 	if id.zero() {
@@ -414,9 +389,9 @@ func checkUserIdentityOneToOne(tx *bolt.Tx, name, source string, id Identity) er
 
 // checkCrewIdentityOneToOne is checkUserIdentityOneToOne for a crew
 // member: an id or key in a source hearing by identity names one crew
-// member there. It is checked in setCrewIdentity, the write a crew
-// identity card approval runs, as the user's is in theirs, and holds
-// for a source hearing by identity alone, as theirs does.
+// member there. It is checked in setCrewIdentity, the write the crew
+// identity command makes, as the user's is in theirs, and holds for a
+// source hearing by identity alone, as theirs does.
 func checkCrewIdentityOneToOne(tx *bolt.Tx, name, source string, id Identity) error {
 	if id.zero() {
 		return nil
@@ -471,10 +446,9 @@ func setIdentityIn(ids *map[string]Identity, name, source string, id Identity, k
 // setCrewIdentity records who the crew member name is in source, as the
 // operator: a mention or an assignment of the id or key there is then
 // addressed to it, so whoever sets it sends what is meant for another to
-// it, or blinds it to what is meant for it. by is the ask the change was
-// approved on, nil for a change typed in a terminal.
-func (w *wtx) setCrewIdentity(ctx context.Context, name, source string, id Identity, actor string, by *approvedOn) error {
-	if err := w.may(ctx, actor, ActMapIdentity, Object{Kind: KindCrew, Name: name, Ask: Askable}); err != nil {
+// it, or blinds it to what is meant for it.
+func (w *wtx) setCrewIdentity(ctx context.Context, name, source string, id Identity, actor string) error {
+	if err := w.may(ctx, actor, ActMapIdentity, Object{Kind: KindCrew, Name: name}); err != nil {
 		return err
 	}
 	var r CrewMember
@@ -487,40 +461,19 @@ func (w *wtx) setCrewIdentity(ctx context.Context, name, source string, id Ident
 	if err := checkCrewIdentityOneToOne(w.Tx, name, source, id); err != nil {
 		return err
 	}
+	before := cloneCrew(&r)
 	kind, data, err := setIdentityIn(&r.Identities, name, source, id, "crew member", "crew")
 	if err != nil {
 		return err
-	}
-	if by != nil {
-		data["approved"] = by
 	}
 	r.Revision = newRevision()
 	if err := put(w.Tx, bCrew, name, r); err != nil {
 		return err
 	}
-	return w.event(r.Journal, kind, actor, data)
-}
-
-// foldIdentityKey is the key as the source's deliveries carry it: a source
-// the yard declares whose identity folds lower keeps one spelling however
-// it was typed. The CLI folds the key before the store by the same rule
-// (hooks.KeyFolderFor, which the store does not read); folding here too
-// keeps what a run ask approves as a terminal would store it. A source the
-// yard declares not, or whose declaration this yardr does not read, keeps
-// the key as given.
-func foldIdentityKey(tx *bolt.Tx, name, key string) string {
-	if key == "" {
-		return ""
+	if err := w.event(r.Journal, kind, actor, data); err != nil {
+		return err
 	}
-	src := new(Source)
-	if ok, err := get(tx, bSources, name, src); err != nil || !ok {
-		return key
-	}
-	d, err := src.Declaration()
-	if err != nil || d.Identity == nil || d.Identity.Fold != source.FoldLower {
-		return key
-	}
-	return strings.ToLower(key)
+	return w.tellCrewStale(name, before, &r, actor)
 }
 
 // AddSubscription subscribes the crew member, or else the user, or else the

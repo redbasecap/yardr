@@ -283,6 +283,10 @@ type Store struct {
 // calls are in flight.
 func (s *Store) SetLogger(log *slog.Logger) { s.log.Store(log) }
 
+// Logger is the logger SetLogger set, nil where none was. The served-call
+// meter reads it when a finished minute has counts to log.
+func (s *Store) Logger() *slog.Logger { return s.log.Load() }
+
 // NoSyncEnv is the variable that, set to 1, opens the store without
 // syncing each commit, and each growth of the file, to the disk: the full
 // key, since the store cannot import config for the YARDR_ prefix, and
@@ -462,8 +466,9 @@ type wtx struct {
 	witness string
 	// fresh is the call's fresh sign-in, and hasFresh whether it carries
 	// one: the web's statement on an approval (WithFreshWitness), read
-	// from the call's context as via is. Only a strong card's approval
-	// reads it (gateRefusal, witnessStrong).
+	// from the call's context as via is. A strong card's approval reads
+	// it (gateRefusal, witnessStrong), and so does a secret giving
+	// (freshGivenRefusal, addGiven).
 	fresh    FreshWitness
 	hasFresh bool
 	// repos are the repository flows, by depot, that a run ask's card needs
@@ -490,6 +495,14 @@ type wtx struct {
 	pairChannelKey string
 	pairPending    *devicePairing
 	pairShown      *AskPairing
+	// approving is the ask this write is approving as it runs its command,
+	// nil on every other write: a tell in the same write leaves it alone,
+	// since the write answers it rather than stales it (runask_stale.go).
+	approving *approvingAsk
+	// stageWrote outlives one transaction attempt of Store.write: bbolt.Batch
+	// may re-run fn after rolling back another tx in the batch, leaving the
+	// stage file written on the first attempt on disk (putStageFile).
+	stageWrote *string
 }
 
 // write runs fn in a batched write transaction, then nudges the pump to
@@ -499,8 +512,9 @@ func (s *Store) write(fn func(*wtx) error) error {
 	defer s.writing.Add(-1)
 	var settle, queued []string
 	var heldFiles []heldFileFetch
+	var stageWrote string
 	err := s.db.Batch(func(tx *bolt.Tx) error {
-		w := &wtx{Tx: tx, store: s, home: s.home, mentions: &s.mentions}
+		w := &wtx{Tx: tx, store: s, home: s.home, mentions: &s.mentions, stageWrote: &stageWrote}
 		err := fn(w)
 		settle, queued = w.settle, w.queued // of the run that is committed: a batch may run fn twice
 		heldFiles = w.heldFiles

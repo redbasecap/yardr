@@ -21,7 +21,7 @@ func TestSubscribeSeveralValuesForOneKey(t *testing.T) {
 	mustAs(t, st, "jo", "crew", "add", "clerk", "--set", "kind=claude", "--on", "held")
 	beads := map[string]string{}
 	for _, depot := range []string{"web", "api"} {
-		if err := st.PutDepot(ctx, store.Depot{Name: depot, Base: "main"}, "me"); err != nil {
+		if err := st.PutDepot(ctx, store.Depot{Name: depot, Base: "main"}, "jo"); err != nil {
 			t.Fatal(err)
 		}
 		b, err := st.CreateBead(ctx, store.NewBead{Title: "work", Depot: depot}, "me")
@@ -91,7 +91,7 @@ func TestSubscribeSeveralValuesForOneKey(t *testing.T) {
 		t.Fatalf("rows of the subscription = %+v, want one that reaches clerk", rows)
 	}
 	text := mustAs(t, st, "jo", "subscribe")
-	if n := strings.Count(text, "depot=web"); n != 1 || !strings.Contains(text, "yardr all depot=web kind=backup_failed kind=base_diverged kind=crew_gave_up kind=fold_refused kind=folded kind=gave_up kind=held ") {
+	if n := strings.Count(text, "depot=web"); n != 1 || !strings.Contains(text, "yardr all depot=web kind=backup_failed kind=base_diverged kind=crew_gave_up kind=flap_held kind=fold_refused kind=folded kind=gave_up kind=held ") {
 		t.Errorf("depot=web is in %d rows, want one with each kind:\n%s", n, text)
 	}
 
@@ -118,7 +118,7 @@ func TestSubscribeWhereValueIsWhole(t *testing.T) {
 	if got := r.Subscriptions[0].String(); strings.Contains(got, "\n") || !strings.Contains(got, `label=line1\nline2`) {
 		t.Errorf("subscription string = %q, want one row with the line break escaped", got)
 	}
-	if err := st.PutDepot(ctx, store.Depot{Name: "web", Base: "main"}, "me"); err != nil {
+	if err := st.PutDepot(ctx, store.Depot{Name: "web", Base: "main"}, "jo"); err != nil {
 		t.Fatal(err)
 	}
 	var ids []string

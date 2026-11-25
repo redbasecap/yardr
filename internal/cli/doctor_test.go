@@ -281,7 +281,8 @@ func gitDepot(t *testing.T, st store.API) store.Depot {
 	}
 	git("init", "-q", "-b", "main")
 	ownDepotFiles(t, depot)
-	if err := st.PutDepot(context.Background(), depot, "me"); err != nil {
+	actor := testOperator(t, st)
+	if err := st.PutDepot(context.Background(), depot, actor); err != nil {
 		t.Fatal(err)
 	}
 	return depot
@@ -297,7 +298,8 @@ func dirDepot(t *testing.T, st store.API) store.Depot {
 	dir := t.TempDir()
 	depot := store.Depot{Name: "web", Path: dir, Kind: store.DepotDir}
 	ownDepotFiles(t, depot)
-	if err := st.PutDepot(context.Background(), depot, "me"); err != nil {
+	actor := testOperator(t, st)
+	if err := st.PutDepot(context.Background(), depot, actor); err != nil {
 		t.Fatal(err)
 	}
 	return depot
@@ -361,7 +363,8 @@ func committedDepot(t *testing.T, st store.API) store.Depot {
 		t.Fatal(err)
 	}
 	depot := store.Depot{Name: "web", Path: dir, Base: "main", Kind: store.DepotGit}
-	if err := st.PutDepot(context.Background(), depot, "me"); err != nil {
+	actor := testOperator(t, st)
+	if err := st.PutDepot(context.Background(), depot, actor); err != nil {
 		t.Fatal(err)
 	}
 	return depot
@@ -1216,8 +1219,9 @@ func TestDoctorLoginServiceDepots(t *testing.T) {
 	if _, err := run(t, a().rootCmd(), "init", "--harness", "claude"); err != nil {
 		t.Fatal(err)
 	}
+	operator := testOperator(t, st)
 	for _, r := range depots[:2] {
-		if err := st.PutDepot(ctx, r, "me"); err != nil {
+		if err := st.PutDepot(ctx, r, operator); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -2098,6 +2102,61 @@ func TestDoctorStrayMemory(t *testing.T) {
 	for _, l := range (&yardState{Server: serverUp, Daemon: true, StrayMemory: single}).lines(home) {
 		if l.tag == tagFault {
 			t.Errorf("the note is a fault: %+v", l)
+		}
+	}
+}
+
+// Doctor names a declared program the machine lacks with the command
+// that installs it, per pack that brought its source, and stays
+// silent where the program stands. The test sets the process PATH,
+// so it stays sequential.
+func TestDoctorNamesMissingPackPrograms(t *testing.T) {
+	st := storetest.New(t)
+	ctx := context.Background()
+	cfg := &config.Config{Home: t.TempDir()}
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	t.Setenv("FAKE_TOOL_BIN", "")
+	decl := "name: google-mail\nbase: https://gmail.googleapis.com\ncredential: { env: GOOGLE_TOKEN }\ncalls:\n  ping: { kind: read, request: { method: GET, path: /me } }\nneeds:\n  - { program: fake-tool, env: FAKE_TOOL_BIN, install: [install-fake] }\n"
+	if _, err := st.PutSource(ctx, "google-mail.yaml", decl, "me"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.RecordPack(ctx, store.PackImport{Pack: "google-mail", Source: "embedded"}, true, "me"); err != nil {
+		t.Fatal(err)
+	}
+	part, err := sourcesPart(ctx, cfg, st, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "pack google-mail: fake-tool is not on this machine: " + yardrAt(cfg.Home) + " pack install google-mail installs it"
+	if !slices.Contains(part.Notes, want) {
+		t.Fatalf("notes = %q, want %q among them", part.Notes, want)
+	}
+	other := filepath.Join(t.TempDir(), "fake-tool")
+	if err := os.WriteFile(other, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FAKE_TOOL_BIN", other)
+	part, err = sourcesPart(ctx, cfg, st, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, note := range part.Notes {
+		if strings.Contains(note, "fake-tool") {
+			t.Fatalf("a program named by its env variable is named as missing: %q", note)
+		}
+	}
+	t.Setenv("FAKE_TOOL_BIN", "")
+	if err := os.WriteFile(filepath.Join(bin, "fake-tool"), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	part, err = sourcesPart(ctx, cfg, st, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, note := range part.Notes {
+		if strings.Contains(note, "fake-tool") {
+			t.Fatalf("a present program is named as missing: %q", note)
 		}
 	}
 }

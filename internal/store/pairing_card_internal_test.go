@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -292,6 +294,51 @@ func TestHasDigits(t *testing.T) {
 		if !strings.Contains(url, want) {
 			t.Errorf("the fixture URL holds no %q: the table proves nothing against substrings", want)
 		}
+	}
+}
+
+// A check whose two halves coincide in its first hash would have a card
+// show what it asks for: the three it displays are the three it wants
+// typed, so copying one's own screen would pass and the leak scan of
+// TestPairingCardConfirms fires on the showing itself (yardr-1h41). The
+// halves of the check a card splits therefore never coincide. This
+// forces a transcript whose first hash does coincide (about one in a
+// thousand, searched for here by that hash alone), then holds its
+// check and its card to the split. No earlier test drives a colliding
+// check, so this is a new function rather than a case of one.
+func TestCardCheckHalvesDiffer(t *testing.T) {
+	joiner := Party{Nonce: NewNonce(), Name: "laptop", Key: newPublicKey(t)}
+	host := Party{Nonce: NewNonce(), Name: "north", Key: newPublicKey(t), URL: "http://10.0.0.5:8790"}
+	var tr Transcript
+	var raw string
+	for range 100_000 {
+		joiner.Nonce = NewNonce()
+		tr = Transcript{Commit: Commit(joiner), Joiner: joiner, Host: host}
+		n := binary.BigEndian.Uint64(sum(tr.fields("yardr-pair-check-1")...)) % 1_000_000
+		raw = fmt.Sprintf("%03d %03d", n/1000, n%1000)
+		if shown, want := CheckHalves(raw); shown == want {
+			break
+		}
+		raw = ""
+	}
+	if raw == "" {
+		t.Fatal("no transcript in 100000 tries has coinciding first-hash halves: the forced collision proves nothing")
+	}
+	shown, want := CheckHalves(tr.Check())
+	if shown == want {
+		t.Errorf("the check of a transcript whose first hash is %q is %q: its halves coincide", raw, tr.Check())
+	}
+	p := &hostPairing{
+		Pairing: Pairing{Calls: "laptop", Peer: "laptop", Key: joiner.Key, Check: tr.Check(), Expires: time.Date(2026, 10, 5, 13, 0, 0, 0, time.UTC)},
+		card:    &pairCard{to: "jo", word: "opened by jo"},
+	}
+	ask := p.cardAsk()
+	text := strings.Join(append([]string{ask.Question}, ask.Context...), "\n")
+	if !strings.Contains(text, shown) {
+		t.Errorf("the card does not show %q:\n%s", shown, text)
+	}
+	if hasDigits(text, want) {
+		t.Errorf("the card shows what it asks for (%q, from a first hash of %q):\n%s", want, raw, text)
 	}
 }
 
@@ -937,14 +984,19 @@ func TestPairCallVerifiedAfterHostEnded(t *testing.T) {
 		return nil, errors.New("no yard there")
 	})
 	err = y.join.AnswerAsk(y.ctx, bead, seq, 0, first(tr), "jo", false)
-	if err == nil || !strings.Contains(err.Error(), "asking north how the pairing stands") || !strings.Contains(err.Error(), "This yard saved nothing") {
+	if err == nil || !strings.Contains(err.Error(), "asking north how the pairing stands") || !strings.Contains(err.Error(), "This yard saved nothing") ||
+		!strings.Contains(err.Error(), "`yardr peer rm` with the name it shows for this yard") {
 		t.Fatalf("the digits with no host to tell = %v", err)
 	}
 	if ps, _ := y.join.Peers(y.ctx); len(ps) != 0 {
 		t.Fatalf("peers = %+v", ps)
 	}
+	// The digits answered the ask, so the retired card's words stand as
+	// the carrier's close reason.
 	if b, _ := y.join.GetBead(y.ctx, bead); b.Status != "closed" {
 		t.Errorf("the carrier is %s", b.Status)
+	} else if b.CloseReason == nil || !strings.Contains(*b.CloseReason, "`yardr peer rm` with the name it shows for this yard") {
+		t.Errorf("the retired card closed the carrier: %+v", b.CloseReason)
 	}
 	if evs := y.join.refusals(t); len(evs) != 2 {
 		t.Fatalf("refusals = %+v: want none logged for an answer that never arrived", evs)
@@ -978,6 +1030,65 @@ func TestPairCallVerifiedAfterHostEnded(t *testing.T) {
 		t.Fatalf("refusals = %+v", evs)
 	} else {
 		assertPairAlarm(t, never.join.Store, never.ctx, evs[0], "pairing with north lapsed: nothing was saved on this yard. If the other yard shows a link from this pairing, its operator can remove this yard there (yardr peer rm <name>) and pair again.")
+	}
+}
+
+// retiredCardWords are the words the card retired on bead carries, where
+// its ask still waited and the retiring wrote them as its answer.
+func retiredCardWords(t *testing.T, s *Store, ctx context.Context, bead string) string {
+	t.Helper()
+	notes, err := s.Notes(ctx, bead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The operator's digits were answered first; the retired card's
+	// answer is the last one the bead carries.
+	var words string
+	for _, n := range notes {
+		if n.Kind != NoteAnswer {
+			continue
+		}
+		a, err := ParseAnswer(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		words = a.Words
+	}
+	if words == "" {
+		t.Fatalf("no retired card on %s", bead)
+	}
+	return words
+}
+
+// The host saved this yard but this yard cannot save it back: the pairing
+// ends naming the removal there, with the name it shows for this yard.
+func TestPairCallJoinFailsToSave(t *testing.T) {
+	// Sequential: the package's fake clock and Stretch (via newPairHost).
+	y := newCallYards(t)
+	tellOutside(t, y.join.Store, y.ctx)
+	_, reg := y.register(t)
+	bead, _, _ := y.card(t)
+	y.join.pair.mu.Lock()
+	jc := y.join.pair.calls[reg.ID]
+	if jc != nil {
+		jc.actor = "jo"
+		delete(y.join.pair.calls, reg.ID)
+	}
+	y.join.pair.mu.Unlock()
+	if jc == nil {
+		t.Fatal("the registered call is gone")
+	}
+	// Another peer already holds the name, so this yard cannot save the host.
+	if _, err := y.join.AddPeer(y.ctx, Peer{Name: jc.Peer, Key: newPublicKey(t)}, "jo"); err != nil {
+		t.Fatal(err)
+	}
+	err := y.join.finishJoin(y.ctx, jc, &PairingOutcome{State: Confirmed}, nil, false, false)
+	if err == nil || !strings.Contains(err.Error(), "could not save it") ||
+		!strings.Contains(err.Error(), "`yardr peer rm` with the name it shows for this yard") {
+		t.Fatalf("the join that cannot save = %v", err)
+	}
+	if words := retiredCardWords(t, y.join.Store, y.ctx, bead); !strings.Contains(words, "`yardr peer rm` with the name it shows for this yard") {
+		t.Fatalf("the retired card says %q", words)
 	}
 }
 

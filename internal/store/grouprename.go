@@ -22,10 +22,9 @@ import (
 // record says nothing of what it was called. A timer names no group.
 
 // ActRenameGroup is renaming a group: the operator's alone, as renaming a
-// peer is, and one a run ask may propose, so that the yardmaster asks and the
-// operator approves. It is declared and registered here and not beside the
-// other actions because policy.go stands at the file-size ceiling the test
-// gate holds (.yardr/test).
+// peer is. It is declared and registered here and not beside the other
+// actions because policy.go stands at the file-size ceiling the test gate
+// holds (.yardr/test).
 const ActRenameGroup Action = "rename a group"
 
 func init() { coreRules[ActRenameGroup] = ruleOperator }
@@ -45,8 +44,8 @@ type DepotUnserved struct {
 	Depot string `json:"depot"`
 }
 
-// GroupRenamed is what a rename of a group moved, as the command and the
-// card tell it. Every count is of what changed, and what a rename leaves
+// GroupRenamed is what a rename of a group moved, as the command tells it.
+// Every count is of what changed, and what a rename leaves
 // alone is not in it: the group's sessions go on running, so Sessions is how
 // many did, and none is released.
 type GroupRenamed struct {
@@ -75,8 +74,7 @@ type GroupRenamed struct {
 	Unserved []DepotUnserved `json:"unserved,omitempty"`
 }
 
-// String is what yardr group rename prints, and what its run ask answers: the
-// rename, and what followed it.
+// String is what yardr group rename prints: the rename, and what followed it.
 func (r GroupRenamed) String() string {
 	lines := []string{fmt.Sprintf("group %s is %s now: the old name is free, and reaches nothing", r.From, r.To)}
 	if len(r.Routes) > 0 {
@@ -104,7 +102,7 @@ func (r GroupRenamed) String() string {
 
 // groupRename is a rename as it is read from the yard's records, before
 // anything is written: each record that names the group, already as it will
-// be. The card says what it holds and the write puts it, so that the two
+// be. The report says what it holds and the write puts it, so that the two
 // cannot disagree about what a rename moves.
 type groupRename struct {
 	from, to string
@@ -529,7 +527,7 @@ func (w *wtx) renameUnserved(name, to string) ([]DepotUnserved, error) {
 	return out, nil
 }
 
-// report is what the plan moves, as the command and the card tell it.
+// report is what the plan moves, as the command tells it.
 func (p *groupRename) report() *GroupRenamed {
 	out := &GroupRenamed{From: p.from, To: p.to, Beads: len(p.beads), Sessions: p.live, Grants: len(p.grants),
 		Unserved: p.unserved}
@@ -561,15 +559,32 @@ func (p *groupRename) report() *GroupRenamed {
 	return out
 }
 
-// apply writes the plan, in the transaction that read it. Its order is what
-// keeps a name from holding two records: what a group of the new name left
-// behind goes before what is moved to it.
-func (p *groupRename) apply(w *wtx) error {
+// apply writes the plan, in the transaction that read it, as actor for the
+// tells its group writes carry. Its order is what keeps a name from holding
+// two records: what a group of the new name left behind goes before what is
+// moved to it.
+func (p *groupRename) apply(w *wtx, actor string) error {
+	var oldGroup Group
+	hadOld, err := get(w.Tx, bGroups, p.from, &oldGroup)
+	if err != nil {
+		return err
+	}
 	if err := w.Bucket(bGroups).Delete([]byte(p.from)); err != nil {
 		return err
 	}
 	if err := put(w.Tx, bGroups, p.to, p.group); err != nil {
 		return err
+	}
+	if hadOld {
+		// The old name is gone and the new one stands in its place: a hold of
+		// either is stale, the old one's however it read the group and the
+		// new one's only where it was written against its absence.
+		if err := w.tellGroupStale(p.from, &oldGroup, nil, actor); err != nil {
+			return err
+		}
+		if err := w.tellGroupStale(p.to, nil, &p.group, actor); err != nil {
+			return err
+		}
 	}
 	for _, r := range p.routes {
 		if err := put(w.Tx, bRoutes, r.ID, r); err != nil {
@@ -628,19 +643,48 @@ func (p *groupRename) apply(w *wtx) error {
 			return err
 		}
 	}
+	// A crew member's subscriptions followed the name, which no crew
+	// fingerprint reads, so this tell stands to prove it and costs no scan.
 	for _, r := range p.crew {
+		var before CrewMember
+		if _, err := get(w.Tx, bCrew, r.Name, &before); err != nil {
+			return err
+		}
 		if err := put(w.Tx, bCrew, r.Name, r); err != nil {
+			return err
+		} else if err := w.tellCrewStale(r.Name, &before, &r, actor); err != nil {
 			return err
 		}
 	}
+	// A user's subscriptions followed the name, which no user
+	// fingerprint reads, so this tell stands to prove it and costs no scan.
 	for _, u := range p.users {
+		var before User
+		if _, err := get(w.Tx, bUsers, u.Name, &before); err != nil {
+			return err
+		}
 		if err := put(w.Tx, bUsers, u.Name, u); err != nil {
+			return err
+		} else if err := w.tellUserStale(u.Name, &before, &u, actor); err != nil {
 			return err
 		}
 	}
 	for _, g := range p.groups {
+		var before Group
+		had, err := get(w.Tx, bGroups, g.Name, &before)
+		if err != nil {
+			return err
+		}
 		if err := put(w.Tx, bGroups, g.Name, g); err != nil {
 			return err
+		}
+		if had {
+			// What followed the name in this group is its subscriptions (and,
+			// for a script group, its members): neither is what a hold read
+			// of the group, so this tell stands to prove it and costs no scan.
+			if err := w.tellGroupStale(g.Name, &before, &g, actor); err != nil {
+				return err
+			}
 		}
 	}
 	for _, rec := range p.sent {
@@ -676,47 +720,33 @@ func (s *Store) RenameGroup(ctx context.Context, name, to, actor string) (*Group
 		if err != nil {
 			return err
 		}
-		out, err = w.renameGroup(ctx, name, to, resolved, nil)
-		return err
+		if err := w.may(ctx, resolved, ActRenameGroup, Object{Kind: KindGroup, Name: name}); err != nil {
+			return err
+		}
+		p, err := w.planGroupRename(name, to)
+		if err != nil {
+			return err
+		}
+		if err := p.apply(w, resolved); err != nil {
+			return err
+		}
+		out = p.report()
+		data := map[string]any{"from": name, "to": to, "beads": out.Beads, "sessions": out.Sessions, "grants": out.Grants}
+		if len(out.Routes) > 0 {
+			data["routes"] = out.Routes
+		}
+		if len(out.Subscriptions) > 0 {
+			data["subscriptions"] = out.Subscriptions
+		}
+		if len(out.Members) > 0 {
+			data["members"] = out.Members
+		}
+		if len(out.Packs) > 0 {
+			data["packs"] = out.Packs
+		}
+		return w.event("", "group_renamed", resolved, data)
 	})
 	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// renameGroup is RenameGroup inside the transaction, so that an approved run
-// ask renames the group in the write that records its approval: by is then
-// the ask it was approved on, which the event carries.
-func (w *wtx) renameGroup(ctx context.Context, name, to, actor string, by *approvedOn) (*GroupRenamed, error) {
-	if err := w.may(ctx, actor, ActRenameGroup, Object{Kind: KindGroup, Name: name, Ask: Askable}); err != nil {
-		return nil, err
-	}
-	p, err := w.planGroupRename(name, to)
-	if err != nil {
-		return nil, err
-	}
-	if err := p.apply(w); err != nil {
-		return nil, err
-	}
-	out := p.report()
-	data := map[string]any{"from": name, "to": to, "beads": out.Beads, "sessions": out.Sessions, "grants": out.Grants}
-	if len(out.Routes) > 0 {
-		data["routes"] = out.Routes
-	}
-	if len(out.Subscriptions) > 0 {
-		data["subscriptions"] = out.Subscriptions
-	}
-	if len(out.Members) > 0 {
-		data["members"] = out.Members
-	}
-	if len(out.Packs) > 0 {
-		data["packs"] = out.Packs
-	}
-	if by != nil {
-		data["approved"] = by
-	}
-	if err := w.event("", "group_renamed", actor, data); err != nil {
 		return nil, err
 	}
 	return out, nil

@@ -31,6 +31,9 @@ type API interface {
 	AdvanceNote(ctx context.Context, id, stage, note string, exp Expect, actor string) (*Bead, error)
 	Done(ctx context.Context, id, outcome, note string, exp Expect, actor string) (*Bead, error)
 	CloseBead(ctx context.Context, id, reason string, exp Expect, actor string) (*Bead, error)
+	// RemoveBead removes a memory for good (removebead.go): the operator's
+	// alone, refused while anything still names the bead.
+	RemoveBead(ctx context.Context, id, actor string) (*BeadRemoval, error)
 	Reopen(ctx context.Context, id string, exp Expect, actor string) (*Bead, error)
 	SetHold(ctx context.Context, id string, hold bool, exp Expect, actor string) (*Bead, error)
 	Release(ctx context.Context, id, reason string, exp Expect, actor string) (*Bead, error)
@@ -65,6 +68,8 @@ type API interface {
 	MarkNoteUntold(ctx context.Context, id string, seq uint64, session, reason string) error
 	Notes(ctx context.Context, id string) ([]Note, error)
 	NoteBlob(ctx context.Context, hash string) (*BlobRef, error)
+	NoteFileBlob(ctx context.Context, seq uint64, n int) (*BlobRef, error)
+	ReplaceNotePage(ctx context.Context, bead string, seq uint64, n int, file BlobFile, actor string) (*BlobRef, error)
 	MailBlob(ctx context.Context, viewer, hash string) (*BlobRef, error)
 	// Delegation and DelegationBlob read a delegated run's record and the
 	// body it holds in a blob: an operator's alone, anyone else told it is
@@ -112,11 +117,20 @@ type API interface {
 	DeferAskExpected(ctx context.Context, id string, ask uint64, turn int, actor string) error
 	DeclineAskExpected(ctx context.Context, id string, ask uint64, turn int, words, actor string, held int) error
 	TakeBackAsk(ctx context.Context, id string, ask uint64, reason, actor string) error
+	// FallThroughStageAsk asks a crew-first stage's people where its
+	// crew member passed the ask up or stayed silent past the group's
+	// wait (stageaskscrew.go), at the caller's clock. The daemon calls
+	// it on its own store; it is not in rpc's Calls, as no program
+	// outside yardr relies on it.
+	FallThroughStageAsk(ctx context.Context, id string, at time.Time) (bool, error)
 	GiveSecret(ctx context.Context, id string, ask uint64, values map[string]string, actor string, weighed bool) (*SourceKeyed, error)
 	LoginWait(ctx context.Context, id, group string) (string, error)
 	LoginWaitReady(ctx context.Context, id string) error
 	ApproveAsk(ctx context.Context, id string, ask uint64, actor string, weighed bool, values map[string]string) (*AskApproved, error)
-	ApproveSetup(ctx context.Context, id string, ask uint64, option int, values map[string]string, account, actor string, weighed bool, host string) (*AskSetupApproved, error)
+	ApproveSetup(ctx context.Context, id string, ask uint64, option int, values map[string]string, account, actor string, weighed bool, host, site string) (*AskSetupApproved, error)
+	// PlanRun is the card a run ask of the command would carry, stored
+	// nowhere, for a terminal's dry run (runask_setfield.go).
+	PlanRun(ctx context.Context, run AskRun) (*AskRun, error)
 
 	PutDepot(ctx context.Context, r Depot, actor string) error
 	Depots(ctx context.Context) ([]Depot, error)
@@ -135,6 +149,7 @@ type API interface {
 	DeleteRoute(ctx context.Context, id, actor string) error
 
 	PutFlow(ctx context.Context, f Flow, actor string) (*Flow, error)
+	PutStageFile(ctx context.Context, flow, stage, text, expectDigest, actor string) (*StageFile, error)
 	ListFlows(ctx context.Context) ([]Flow, error)
 	GetFlow(ctx context.Context, name string) (*Flow, error)
 	DeleteFlow(ctx context.Context, name, actor string) error
@@ -266,6 +281,10 @@ type API interface {
 	FireTimers(ctx context.Context, at time.Time) (*TimerPass, error)
 	CrewPrime(ctx context.Context, name string) (*Prime, error)
 	CrewPrimeFor(ctx context.Context, name, user string) (*Prime, error)
+	// Prime is what crew's session reads at prime from files and settings:
+	// its role, the operator, the memory titles and each depot's rules
+	// (prime.go). The operator's, on the socket alone.
+	Prime(ctx context.Context, crew string) (*PrimeInputs, error)
 	Remember(ctx context.Context, m NewMemory, actor string) (*Bead, error)
 	Recall(ctx context.Context, scope, query string) ([]MemoryInfo, error)
 	RecallJournal(ctx context.Context, scope, query string) (*JournalRecall, error)

@@ -56,6 +56,7 @@ type secretField struct {
 	source string
 	login  string
 	hook   string
+	google string
 	env    []string
 	values map[string]string
 	in     textinput.Model
@@ -90,6 +91,9 @@ func (s *secretField) label() string {
 	}
 	if s.hook != "" {
 		return label + " for the hook " + s.hook + "  "
+	}
+	if s.google != "" {
+		return label + " for the Google account " + s.google + "  "
 	}
 	return label + " for " + s.source + "  "
 }
@@ -185,7 +189,7 @@ func (m *Model) ask() tea.Cmd {
 	}
 	in.EchoCharacter = '•'
 	in.Cursor.Style = look.cursor
-	m.secret = &secretField{bead: r.Note.Bead, ask: r.Note.Seq, source: r.Ask.Secret.Source, login: r.Ask.Secret.Login, hook: r.Ask.Secret.Hook,
+	m.secret = &secretField{bead: r.Note.Bead, ask: r.Note.Seq, source: r.Ask.Secret.Source, login: r.Ask.Secret.Login, hook: r.Ask.Secret.Hook, google: r.Ask.Secret.Google,
 		env: r.Ask.Secret.Env, values: map[string]string{}, in: in, echo: in.EchoMode}
 	if len(r.Ask.Weight) > 0 {
 		// The number is the person's typing, and shows as they type it.
@@ -277,6 +281,9 @@ func (m *Model) give() tea.Cmd {
 		if s.hook != "" {
 			return gaveMsg{text: without(fmt.Sprintf("%s gave %s · it is set in %s", me, strings.Join(keyed.Given, " and "), keyed.File), s.values)}
 		}
+		if s.google != "" {
+			return gaveMsg{text: without(fmt.Sprintf("%s gave %s · it is set in %s · %s", me, strings.Join(keyed.Given, " and "), keyed.File, keyed.Next), s.values)}
+		}
 		text := fmt.Sprintf("%s gave %s · it is set in %s", me, strings.Join(keyed.Given, " and "), keyed.File)
 		if keyed.Missing != "" {
 			text += " · " + keyed.Missing
@@ -292,7 +299,6 @@ func (m *Model) give() tea.Cmd {
 	}
 }
 
-// without is text with every value of values taken out.
 func without(text string, values map[string]string) string {
 	for _, v := range values {
 		text = strings.ReplaceAll(text, v, hidden)

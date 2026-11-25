@@ -170,25 +170,32 @@ func StrongWeight(weight []AskWeight) bool {
 	})
 }
 
-// StrongWords names a strong card's weight in a refusal: strong with the
-// trust and code classes it carries. The web names it the same way before
-// it starts a strong card's sign-in.
-func StrongWords(ws []AskWeight) string {
-	var classes []string
-	for _, w := range ws {
-		if w.Class == WeightTrust || w.Class == WeightCode {
-			classes = append(classes, w.Class)
-		}
+// Weighty reports whether the card's stored weight makes it a weighty
+// card: any class at all, since a routine card carries no weight. It is
+// StrongWeight's wider neighbour, not a widening of it: strong keeps
+// meaning trust or code alone. The web reads the same predicate before
+// it starts a weighty card's sign-in, never its own.
+func Weighty(weight []AskWeight) bool {
+	return len(weight) > 0
+}
+
+// WeightyWords names a weighty card's weight in a refusal: weighty with
+// the classes it carries. The web names it the same way before it starts
+// a weighty card's sign-in.
+func WeightyWords(ws []AskWeight) string {
+	classes := make([]string, len(ws))
+	for i, w := range ws {
+		classes[i] = w.Class
 	}
-	return "strong (" + strings.Join(classes, ", ") + ")"
+	return "weighty (" + strings.Join(classes, ", ") + ")"
 }
 
 // gateRefusal is a run or setup approval's gate behind the stale check:
 // the weighed refusal first, the fresh witness's second (weighedRefusal,
 // freshRefusal). No door is refused for being the one it is: a paired
-// device of the operator approves a strong card as it approves any card,
+// device of the operator approves a weighty card as it approves any card,
 // and the card's own gate is that its person saw its weight. The
-// approvals of a strong card differ in how they are witnessed
+// approvals of a weighty card differ in how they are witnessed
 // (witnessStrong), not in whether they are taken.
 func (w *wtx) gateRefusal(seq uint64, weight, stored []AskWeight, actor string, weighed bool) error {
 	if err := weighedRefusal(seq, weight, weighed); err != nil {
@@ -203,32 +210,93 @@ func (w *wtx) gateRefusal(seq uint64, weight, stored []AskWeight, actor string, 
 // sign-in, and past it no time counts.
 const freshSkew = time.Minute
 
-// freshRefusal says why the approval of the ask seq is refused when it
-// carries a fresh sign-in that does not witness it: nil for a routine
-// card, which asks for no witness, and for an approval that carries none,
-// which the socket witnesses as a terminal's (witnessStrong). A strong
-// card approved in the hosted web carries the request's: one made as
-// another user, one with no authentication time, or one outside the
-// gateway's privileged-session window refuses, and the ask stays open.
-// Whether the sign-in answered a strong card's challenge is the web's to
-// have checked before it stated the witness; the store takes the
-// statement and checks whom and when.
-func (w *wtx) freshRefusal(seq uint64, stored []AskWeight, actor string) error {
-	if !w.hasFresh || !StrongWeight(stored) {
-		return nil
-	}
+// freshFault is why the fresh sign-in this write carries does not
+// witness a write by actor: "", or one of "other" (made as another
+// user), "none" (no authentication time) or "window" (outside the
+// gateway's privileged-session window, or ahead of the clock past its
+// skew). It checks whom and when alone; whether the sign-in answered a
+// challenge is the web's to have checked before it stated the witness.
+func (w *wtx) freshFault(actor string) string {
 	switch fw := w.fresh; {
 	case fw.User != actor:
-		return fmt.Errorf("ask %d is %s: this approval's fresh sign-in was made as %s, not as %s. Nothing ran, and the ask stays open", seq, StrongWords(stored), fw.User, actor)
+		return "other"
 	case fw.AuthTime.IsZero():
-		return fmt.Errorf("ask %d is %s: this approval carries a fresh sign-in with no authentication time, and a strong card is approved in the hosted web only under one. Nothing ran, and the ask stays open", seq, StrongWords(stored))
+		return "none"
 	default:
 		window, err := ParseSpan(w.settingValue(WebJWTPrivilegedSessionMaxAgeSetting))
 		if err != nil || window <= 0 || fw.AuthTime.Before(now().Add(-window)) || fw.AuthTime.After(now().Add(freshSkew)) {
-			return fmt.Errorf("ask %d is %s: this approval's fresh sign-in is outside the gateway's window, and a strong card is approved in the hosted web only under one inside it. Nothing ran, and the ask stays open", seq, StrongWords(stored))
+			return "window"
 		}
+		return ""
+	}
+}
+
+// freshRefusal says why the approval of the ask seq is refused when it
+// carries a fresh sign-in that does not witness it: nil for a routine
+// card, which asks for no witness, and for an approval that carries none,
+// which the socket witnesses as a terminal's (witnessStrong). A weighty
+// card approved in the hosted web carries the request's: one made as
+// another user, one with no authentication time, or one outside the
+// gateway's privileged-session window refuses, and the ask stays open.
+// Whether the sign-in answered a weighty card's challenge is the web's to
+// have checked before it stated the witness; the store takes the
+// statement and checks whom and when.
+func (w *wtx) freshRefusal(seq uint64, stored []AskWeight, actor string) error {
+	if !w.hasFresh || !Weighty(stored) {
 		return nil
 	}
+	switch w.freshFault(actor) {
+	case "other":
+		return fmt.Errorf("ask %d is %s: this approval's fresh sign-in was made as %s, not as %s. Nothing ran, and the ask stays open", seq, WeightyWords(stored), w.fresh.User, actor)
+	case "none":
+		return fmt.Errorf("ask %d is %s: this approval carries a fresh sign-in with no authentication time, and a weighty card is approved in the hosted web only under one. Nothing ran, and the ask stays open", seq, WeightyWords(stored))
+	case "window":
+		return fmt.Errorf("ask %d is %s: this approval's fresh sign-in is outside the gateway's window, and a weighty card is approved in the hosted web only under one inside it. Nothing ran, and the ask stays open", seq, WeightyWords(stored))
+	}
+	return nil
+}
+
+// freshGivenRefusal is freshRefusal for a secret giving (giveSecret): a
+// secret ask is weighty (credential) but not strong, so StrongWeight
+// never reaches it, yet a giving that carries a fresh sign-in is judged
+// by the same whom-and-when check, in the card's weight words. Nil where
+// the giving carries no witness, as before: the weighed word alone then
+// judges it, and a device or terminal giving is unchanged.
+func (w *wtx) freshGivenRefusal(seq uint64, weight []AskWeight, actor string) error {
+	if !w.hasFresh {
+		return nil
+	}
+	switch w.freshFault(actor) {
+	case "other":
+		return fmt.Errorf("ask %d is %s: this giving's fresh sign-in was made as %s, not as %s. Nothing was given, and the ask stays open", seq, WeightWords(weight), w.fresh.User, actor)
+	case "none":
+		return fmt.Errorf("ask %d is %s: this giving carries a fresh sign-in with no authentication time, and a secret is given in the hosted web only under one. Nothing was given, and the ask stays open", seq, WeightWords(weight))
+	case "window":
+		return fmt.Errorf("ask %d is %s: this giving's fresh sign-in is outside the gateway's window, and a secret is given in the hosted web only under one inside it. Nothing was given, and the ask stays open", seq, WeightWords(weight))
+	}
+	return nil
+}
+
+// freshMappingRefusal is freshRefusal for a mapping pick (recordAnswer,
+// through addAnswerNote): a mapping card is weighty (as-user) but not
+// strong, so StrongWeight never reaches it, yet a pick that carries a
+// fresh sign-in is judged by the same whom-and-when check, in the card's
+// weight words. Nil where the pick carries no witness, as before: the
+// weighed word alone then judges it, and a device or terminal pick is
+// unchanged.
+func (w *wtx) freshMappingRefusal(seq uint64, stored []AskWeight, actor string) error {
+	if !w.hasFresh || !Weighty(stored) {
+		return nil
+	}
+	switch w.freshFault(actor) {
+	case "other":
+		return fmt.Errorf("ask %d is %s: this pick's fresh sign-in was made as %s, not as %s. Nothing was written, and the ask stays open", seq, WeightyWords(stored), w.fresh.User, actor)
+	case "none":
+		return fmt.Errorf("ask %d is %s: this pick carries a fresh sign-in with no authentication time, and a mapping card is picked in the hosted web only under one. Nothing was written, and the ask stays open", seq, WeightyWords(stored))
+	case "window":
+		return fmt.Errorf("ask %d is %s: this pick's fresh sign-in is outside the gateway's window, and a mapping card is picked in the hosted web only under one inside it. Nothing was written, and the ask stays open", seq, WeightyWords(stored))
+	}
+	return nil
 }
 
 // weighAsk weighs the card the ask a holds, as the yard wrote it: a secret,
@@ -284,7 +352,9 @@ func storedWeight(notes []Note, seq uint64) []AskWeight {
 func secretWeight(sec AskSecret) []AskWeight {
 	out := []AskWeight{weighs(WeightCredential, strings.TrimPrefix(sec.Line(), "a secret: "))}
 	// A login's input goes to the login that waits, and no call reads it.
-	if sec.As != "" && sec.Login == "" {
+	if sec.Google != "" && sec.As != "" {
+		out = append(out, weighs(WeightAsUser, fmt.Sprintf("a Google call made --as %s reads the sign-in for %s's own account", sec.As, sec.Google)))
+	} else if sec.As != "" && sec.Login == "" {
 		out = append(out, weighs(WeightAsUser, fmt.Sprintf("a call of the source %s made --as %s reads it as %s's own", sec.Source, sec.As, sec.As)))
 	}
 	return out

@@ -36,7 +36,7 @@ const File = "pack.yaml"
 // key is read, since an older yardr that read on would call a newer key
 // unknown instead of saying that it is too old. It rises by one in the
 // release that adds anything to what the page lists as stable.
-const API = 7
+const API = 8
 
 // Pack is a pack as written. Everything that has an order in the file
 // keeps it: flows, a flow's stages (the first is where a bead starts), a
@@ -129,14 +129,14 @@ type Declared struct {
 // at its root. The list is the pack's own, not the reader's of
 // internal/source: a key that reader learns later is not thereby one a pack
 // may bring, and is refused until it is added here.
-var DeclarationKeys = []string{"name", "about", "base", "bases", "base_template", "credential", "check", "idempotency", "calls", "notify"}
+var DeclarationKeys = []string{"name", "about", "base", "bases", "base_template", "path_template", "credential", "check", "idempotency", "calls", "notify"}
 
 // SourceDeclarationKeys are the keys a declaration in a pack of kind
 // source may have at its root: a pack for the yard brings the commands a
 // declaration names, which a pack for a depot does not. limits stays
 // refused in every pack: what a harness kind's subscription still carries
 // is the yard's to ask, not a pack's to say.
-var SourceDeclarationKeys = []string{"name", "about", "base", "bases", "base_template", "credential", "check", "idempotency", "calls", "notify", "hear", "hook", "thread", "link", "identity", "events", "git"}
+var SourceDeclarationKeys = []string{"name", "about", "base", "bases", "base_template", "path_template", "credential", "check", "idempotency", "calls", "notify", "hear", "hook", "thread", "link", "identity", "events", "git", "needs"}
 
 type Flow struct {
 	Name string `json:"name"`
@@ -206,23 +206,20 @@ type Preset struct {
 }
 
 type CrewMember struct {
-	Name      string   `json:"name"`
-	Role      string   `json:"role,omitempty"`
+	Name string `json:"name"`
+	Role string `json:"role,omitempty"`
+	// Section is the yardmaster section file prime appends past its budget
+	// (sections/yardmaster.md by convention); "" for a pack with none.
+	Section   string   `json:"section,omitempty"`
 	Events    []string `json:"events,omitempty"`
 	Stages    []string `json:"stages,omitempty"`
 	Done      bool     `json:"done,omitempty"`
 	Subscribe []Source `json:"subscribe,omitempty"`
-	// OpenThreads are the sources the pack asks that its crew member may open
-	// threads in, in file order. It is a request and no more: the import
-	// asks the operator, and only their yes sets it on the yard's crew member.
+	// OpenThreads are the sources the pack asks that its crew member may open threads in, in file order: a request only the operator's yes sets.
 	OpenThreads []string `json:"open_threads,omitempty"`
-	// Calls are the calls of declared sources the pack asks that the crew
-	// member may make: a request, as a group's.
+	// Calls are the calls of declared sources the pack asks that the crew member may make: a request, as a group's.
 	Calls []CallsAsked `json:"calls,omitempty"`
-	// ExposeToPeers asks that the yards this one is linked with may see the
-	// crew member and write to it. A request, as OpenThreads is: the import
-	// asks the operator, peer by peer, and only their yes exposes it
-	// (store.AllowPeer). A pack names no peer and no person.
+	// ExposeToPeers asks that the yards this one is linked with may see the crew member and write to it: a request, as OpenThreads is, that only the operator's yes, peer by peer, exposes it (store.AllowPeer). A pack names no peer and no person.
 	ExposeToPeers bool `json:"expose_to_peers,omitempty"`
 }
 
@@ -802,7 +799,7 @@ func (r *reader) declared(e entry, kind string) (d Declared, ok bool) {
 	// The pack's own refusal first, and the reader's of the same key not
 	// after it: one mistake is one line.
 	keys := DeclarationKeys
-	refusal := fmt.Sprintf("a declaration in a pack has %s and no other key: hear, hook, thread, link, identity, events and git are for a pack of kind source, and what else a source may have is set in the yard, by its operator", strings.Join(keys, ", "))
+	refusal := fmt.Sprintf("a declaration in a pack has %s and no other key: hear, hook, thread, link, identity, events, git and needs are for a pack of kind source, and what else a source may have is set in the yard, by its operator", strings.Join(keys, ", "))
 	if kind == KindSource {
 		keys = SourceDeclarationKeys
 		refusal = fmt.Sprintf("a declaration in a pack of kind source has %s and no other key: what else a source may have is set in the yard, by its operator", strings.Join(keys, ", "))
@@ -1653,7 +1650,7 @@ func (r *reader) outcome(e entry, target func(n *yaml.Node, key, to string) bool
 
 func (r *reader) member(e entry, flows []Flow) CrewMember {
 	res := CrewMember{Name: e.key}
-	for _, k := range r.entries(e.v, e.path, "role", "hears", "subscribe", "open_threads", "expose_to_peers", "calls") {
+	for _, k := range r.entries(e.v, e.path, "role", "section", "hears", "subscribe", "open_threads", "expose_to_peers", "calls") {
 		switch k.key {
 		case "expose_to_peers":
 			res.ExposeToPeers, _ = r.boolean(k.v, k.path)
@@ -1661,6 +1658,8 @@ func (r *reader) member(e entry, flows []Flow) CrewMember {
 			res.Calls = r.calls(k)
 		case "role":
 			res.Role = r.rel(k.v, k.path, "role")
+		case "section":
+			res.Section = r.rel(k.v, k.path, "section")
 		case "hears":
 			for _, h := range r.entries(k.v, k.path, "events", "stages", "done") {
 				switch h.key {

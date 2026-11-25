@@ -24,9 +24,20 @@ func (p edgeSetupPolicy) May(ctx context.Context, tx *bbolt.Tx, actor string, ac
 }
 
 // googleSourceText is one google source's declaration as its pack brings
-// it, against no real Google address: the hosted setup reads its name
-// and credential alone.
+// it, against no real Google address: the hosted setup reads its name,
+// its account input and its declared scopes alone. The mail-shaped one
+// declares no mint_scopes and so is never a hosted source.
 func googleSourceText(name string) string {
+	scopes := map[string]string{
+		"google-drive":    "https://www.googleapis.com/auth/drive.file",
+		"google-docs":     "https://www.googleapis.com/auth/documents",
+		"google-slides":   "https://www.googleapis.com/auth/presentations",
+		"google-calendar": "https://www.googleapis.com/auth/calendar.events, https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+	}[name]
+	line := ""
+	if scopes != "" {
+		line = "  mint_scopes: [" + scopes + "]\n"
+	}
 	return `name: ` + name + `
 base: https://google.example.com
 credential:
@@ -36,7 +47,7 @@ credential:
     - name: GOOGLE_ACCOUNT
       secret: false
   mint_command: [google-mint]
-calls:
+` + line + `calls:
   ping: { kind: read, request: { method: GET, path: /ping } }
 `
 }
@@ -73,9 +84,10 @@ func googleYard(t *testing.T, st store.API) {
 }
 
 // The hosted setup on a hosted yard: against a stand-in edge whose
-// connection granted only some of the fixed set, the granted sources
-// take the hosted mint as their effective mint, the ungranted keep the
-// pack's google-mint, and google-mail is untouched. Clearing a set
+// connection granted only some of the declared scopes, the granted
+// sources take the hosted mint as their effective mint, the ungranted
+// keep the pack's google-mint, and the source that declares no scope
+// (the mail-shaped one) is never probed, set or mentioned. Clearing a set
 // source's mint_command shows the pack's mint again. With no reading of
 // the provider's terms no record stands; with --terms-read one does,
 // naming the yard kind's provider.
@@ -109,12 +121,14 @@ func TestEdgeSetupGoogleHosted(t *testing.T) {
 		"source google-slides: kept the pack's mint",
 		"needs https://www.googleapis.com/auth/drive.file, missing from the Google connection's grant",
 		"needs https://www.googleapis.com/auth/presentations, missing from the Google connection's grant",
-		"source google-mail: skipped",
 		"no provider-terms record is made until you do",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("setup-google says no %q in:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out+errs, "google-mail") {
+		t.Errorf("setup-google mentions the source that declares no scope:\n%s%s", out, errs)
 	}
 	if strings.Contains(out+errs, "ya29.probe") {
 		t.Errorf("a probe's token was printed:\n%s%s", out, errs)
@@ -177,6 +191,28 @@ func TestEdgeSetupGoogleHosted(t *testing.T) {
 	}
 	if got := effective("google-docs"); !strings.HasSuffix(got, packMint("google-docs")) {
 		t.Errorf("cleared, google-docs mints by %q, want the pack's google-mint", got)
+	}
+	// A copy stored before its pack declared the scopes holds none: the
+	// setup passes it over, never probed, and names it with the pack to apply
+	// again, in the words the hosted mint refuses its calls with. Mail, whose
+	// pack declares none, is still not mentioned.
+	stale := strings.Replace(googleSourceText("google-drive"), "  mint_scopes: [https://www.googleapis.com/auth/drive.file]\n", "", 1)
+	if _, err := st.PutSource(ctx, "google-drive.yaml", stale, "jo"); err != nil {
+		t.Fatal(err)
+	}
+	before := len(edge.State().Mints)
+	out, errs, err = edgeAs(t, st, srv.Client(), "jo", "edge", "setup-google", srv.URL)
+	if err != nil {
+		t.Fatalf("setup-google with a copy stored without scopes: %v\n%s%s", err, out, errs)
+	}
+	if want := "source google-drive: skipped (source google-drive declares no mint_scopes, so the hosted mint does not serve it; re-apply its pack (`yardr pack apply google-drive`))"; !strings.Contains(out, want) {
+		t.Errorf("setup-google says no %q in:\n%s", want, out)
+	}
+	if strings.Contains(out+errs, "google-mail") {
+		t.Errorf("setup-google mentions the source whose pack declares no scope:\n%s%s", out, errs)
+	}
+	if got := len(edge.State().Mints) - before; got != 3 {
+		t.Errorf("the edge took %d mints, want the three probes of the sources that declare scopes and none for the one that declares none", got)
 	}
 	// A reading must include an explicit answer to the training question,
 	// and invalid dates fail before the setup probes or sets any source.

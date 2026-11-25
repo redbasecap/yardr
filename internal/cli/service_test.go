@@ -439,7 +439,7 @@ func TestDaemonInstallUninstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	stub(t, &userHomeDir, func() (string, error) { return "/Users/jo", nil })
-	if err := st.PutDepot(context.Background(), store.Depot{Name: "notes", Path: "/Users/jo/Documents/notes"}, "me"); err != nil {
+	if err := st.PutDepot(context.Background(), store.Depot{Name: "notes", Path: "/Users/jo/Documents/notes"}, testOperator(t, st)); err != nil {
 		t.Fatal(err)
 	}
 	other := filepath.Join(dir, "com.example.other.plist")
@@ -1053,6 +1053,8 @@ func TestWebStart(t *testing.T) {
 	if _, err := run(t, a().rootCmd(), "init", "--harness", "claude"); err != nil {
 		t.Fatal(err)
 	}
+	// The gated runs act as the operator init named, not the OS user.
+	op := testOperator(t, st)
 	started := stubWeb(t)
 	out, err := run(t, a().rootCmd(), "web", "start")
 	if err != nil || !slices.Equal(*started, []string{"127.0.0.1:8791"}) {
@@ -1180,7 +1182,7 @@ func TestWebStart(t *testing.T) {
 		t.Errorf("the start printed the origin of a fixed --pages-addr:\n%s", out)
 	}
 	clear()
-	if _, err := run(t, a().rootCmd(), "settings", "set", "web_pages_addr", "127.0.0.1:9100"); err != nil {
+	if _, err := run(t, a().rootCmd(), "settings", "set", "web_pages_addr", "127.0.0.1:9100", "--actor", op); err != nil {
 		t.Fatal(err)
 	}
 	spawnsWith([]string{"--addr", "127.0.0.1:0"}, "127.0.0.1:9100")
@@ -1193,7 +1195,7 @@ func TestWebStart(t *testing.T) {
 		t.Errorf("the start printed the origin of web_pages_addr:\n%s", out)
 	}
 	clear()
-	if _, err := run(t, a().rootCmd(), "settings", "set", "web_pages_addr", ""); err != nil {
+	if _, err := run(t, a().rootCmd(), "settings", "set", "web_pages_addr", "", "--actor", op); err != nil {
 		t.Fatal(err)
 	}
 

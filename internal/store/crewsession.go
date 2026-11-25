@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,26 @@ import (
 // crew.go for one session; the sibling calls it with "". A user with no
 // conversation (unserved, or no env_for_ key) is refused: its mail falls
 // back to the line slice.
+
+// checkCrewTiming holds a member's session-lifetime settings to their
+// shapes, as putCrew saves them: the most a session may live and the
+// grace of its handoffs are durations, and the context handoff a
+// percentage.
+func checkCrewTiming(r CrewMember) error {
+	for _, d := range []string{r.MaxAge, r.HandoffGrace} {
+		if d != "" {
+			if _, err := time.ParseDuration(d); err != nil {
+				return fmt.Errorf("duration %q: %w", d, err)
+			}
+		}
+	}
+	if r.ContextHandoff != "" {
+		if n, err := strconv.Atoi(r.ContextHandoff); err != nil || n < 0 || n > 100 {
+			return fmt.Errorf("context_handoff %q: want a percentage 0..100", r.ContextHandoff)
+		}
+	}
+	return nil
+}
 
 // changeCrewSessionAt is changeCrewAt for one session: fn sees the member
 // and the session's runtime state, and what it changes is stored under a
@@ -331,30 +352,17 @@ func (s *Store) CrewStartFailedFor(ctx context.Context, name, user, reason strin
 // else asking must be the operator or the yardmaster.
 func (s *Store) RequestRestartFor(ctx context.Context, name, user, reason, rev, actor string) error {
 	return s.changeCrewSessionAt(name, user, rev, func(w *wtx, r *CrewMember, st *CrewSession) error {
-		return w.requestRestartFor(ctx, r, st, user, reason, actor, nil)
+		resolved, err := paneAuthor(w.Tx, callerOf(ctx), actor)
+		if err != nil {
+			return err
+		}
+		if err := w.store.daemonOr(ctx, w.Tx, resolved, ActRestartCrew, Object{Kind: KindCrew, Name: r.Name}); err != nil {
+			return err
+		}
+		t := now()
+		st.RestartRequested, st.RestartRequestedAt = reason, &t
+		return w.event(r.Journal, "crew_restart_requested", resolved, sessionData(user, map[string]any{"crew": r.Name, "reason": reason}))
 	})
-}
-
-// requestRestartFor is the store write of RequestRestartFor, shared with
-// an approved run ask so both paths keep the same permission gate, session
-// change and event. by names the ask on an approved request; a terminal
-// request carries none.
-func (w *wtx) requestRestartFor(ctx context.Context, r *CrewMember, st *CrewSession, user, reason, actor string, by *approvedOn) error {
-	resolved, err := paneAuthor(w.Tx, callerOf(ctx), actor)
-	if err != nil {
-		return err
-	}
-	actor = resolved
-	if err := w.store.daemonOr(ctx, w.Tx, actor, ActRestartCrew, Object{Kind: KindCrew, Name: r.Name}); err != nil {
-		return err
-	}
-	t := now()
-	st.RestartRequested, st.RestartRequestedAt = reason, &t
-	data := map[string]any{"crew": r.Name, "reason": reason}
-	if by != nil {
-		data["approved"] = by
-	}
-	return w.event(r.Journal, "crew_restart_requested", actor, sessionData(user, data))
 }
 
 // MarkRotationAskedFor is MarkRotationAsked for one session. The

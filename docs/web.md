@@ -426,10 +426,14 @@ for want of its person's word that the weight was seen (`weighed`,
 [api.md](api.md#weighty-cards)): a secret ask shows no field and no
 giving, a mapping ask shows its options as a list with no pick, and each
 names the terminal command instead, where the card is given or picked,
-with Later and Decline staying as ever. The needs rows and the line's
+with Later and Decline staying as ever. In a hosted window the bead's
+page is the exception for a secret ask: it gives there under a fresh
+sign-in, and for a mapping ask: an operator picks there under a fresh
+sign-in ([One bead](#one-bead)). The needs rows and the line's
 waits follow the page: a weighty card shows its weight first there too,
-a mapping card names the pick's terminal command instead of offering its
-picks, and the words stay with Later and Decline. A strong card — trust
+a mapping card offers its picks to an operator in a hosted window as
+its bead's page does and names the pick's terminal command instead
+everywhere else, and the words stay with Later and Decline. A strong card — trust
 or code in its weight — is the exception on a hosted yard: the needs rows
 and the line's waits approve it as its bead's page does ([One
 bead](#one-bead)). A giving or a writing pick posted straight at the
@@ -751,7 +755,7 @@ origin; the test allows those and only those ([One bead](#one-bead)).
 | `/line` | what waits for a person, and the line in numbers ([The right column](#the-right-column)) | `Line` |
 | `/line?home=1` | the home mode: the line panel alone, what home's aside shows and re-reads ([The right column](#the-right-column)) | `Line` |
 | `/flows` | per depot, the flows that govern it: each stage a section with its group and the open beads in it as cards, which move as the beads do, and a stage with none folded to its head line ([Flows](#flows)) | `Flows` |
-| `/flows?panel=1` | the yard panel: every depot's flows drawn as track, with the open beads standing on them as blocks ([Flows](#flows)) | `Flows` |
+| `/flows?panel=1` | the yard panel: every depot's flows as a list, with the open beads in no stage off the line ([Flows](#flows)) | `Flows` |
 | `/beads` | the open beads, the newest change first ([Beads](#beads)) | `Beads` |
 | `/beads?depot=<depot>&stage=<stage>` | the same, of one depot, in one stage, or both | `Beads` |
 | `/beads?all=1` | the closed beads too, every one (`yardr bead list --all`) | `Beads` |
@@ -759,6 +763,7 @@ origin; the test allows those and only those ([One bead](#one-bead)).
 | `/beads/<id>/asks/<ask>/files/<n>` | one file of the full text behind a summary card, counted from 1: its hashes, its text whole, and links to the file before it, the file after it and the card. The operator the ask is put to reads it while the ask is open; anyone else gets a 404 ([One bead](#one-bead)) | `PackFilePage` |
 | `/blobs/<hash>` | a note's blob to anyone, and on a view that acts a mail's file to its sender or recipient: the bytes with their type; anything else is a 404 ([One bead](#one-bead)). An image and a page open inline, a file downloads (`Content-Disposition: attachment`) under the first name the lookup finds. On the sandbox origin a note's page runs under the scripted policy, a file downloads the same way | |
 | `/blobs/<hash>/<name>` | the same blob served under that name, when the name passes the rule; a name that fails it is a 404. One blob can carry different names on different letters, so the view's pages link with the name ([One bead](#one-bead)) | |
+| `/blobs/note/<seq>/<n>` | a note's file at its stable address: the note `<seq>`'s current bytes for its file `<n>`, counted from 1, so the address shows the page after a replace; a seq no note has or an `<n>` the note has no file at is a 404. A page opens inert as on the hash route, and on the sandbox origin under the scripted policy ([One bead](#one-bead)) | |
 | `/sessions` | the running sessions, the oldest first, with bead, stage, group, originator, login, runner, state and age (`yardr session list`), and under them the claims of manual groups, live | `Sessions` |
 | `/sessions?all=1` | the same page; its JSON lists the ended sessions too, every one (`yardr session list -a --all`) | `Sessions` |
 | `/crew` | each crew member: whether it runs, since when, and its unread inbox count when there is one, live. Journals and handoffs are not shown | `Crew` |
@@ -873,8 +878,9 @@ Home as JSON:
   small. A recommendation appears once in the labelled
   detail below the row, a weighty card's weight first. On a view that acts
   the oldest ask answers under the row, with its options as buttons
-  ([Acting as a user](#acting-as-a-user)), but a weighty mapping card
-  names the pick's terminal command instead of offering its picks;
+  ([Acting as a user](#acting-as-a-user)); a weighty mapping card offers
+  its picks there to an operator in a hosted window, as on its bead's
+  page, and names the pick's terminal command instead everywhere else;
   otherwise the row only links to the bead. On a phone an asked row gives the
   question the row's first line whole, ending in an ellipsis, and the
   bead id, optional topic and age stand under it, so the question
@@ -1477,56 +1483,18 @@ bead: reload the page to see it.
 
 ## The yard panel
 
-`/flows?panel=1` (the Yard row of the Lines column) draws every depot's flows as
-a signal panel: one line plan per flow — one thin track line, each stage a
-section of it with its name and count under it, a manual stage as a short
-siding above, the other edges as thin unlabelled lines — with the open
-beads standing on it as lights. A flow with no open bead still draws its
-bare track. The page has no right column, so its centre runs to the
-window's edge: each depot as wide as its widest flow plan needs, with
-depots side by side where there is room. On a phone they stack, and a
-diagram wider than its depot pans horizontally at full size.
-
-How to read it:
-
-- A light is its bead: tapping it opens the bead. What it is stands in its
-  title; a rust light's title names what holds it. Lights stand newest
-  first; past ten on one section the rest fold into `+N`, and the count
-  beside the stage name always says the true number. A stage with none
-  carries no count.
-- A section is lit green while a session runs in it. No bead writes
-  anything on the plan: no id, no group name, nothing beside its light.
-- Every blocked kind is told apart: solid red for held, hollow red for
-  gave up, a muted outline for stalled, rust with a red ring for blocked on
-  a prompt, rust for waiting on a dependency, a red diamond before a bead
-  back on `failed` or `changes`. A bead running past its usual time gets
-  an amber ring around its light besides, its title naming the stage age
-  against the p90; late stands beside the stalled lamp, never instead of
-  it ([Estimates](#estimates-the-eta-and-the-late-mark)).
-- A stage with a bead being worked and no fault of its own carries no
-  lamp: it is moving. A prompt-blocked session keeps its claim but still
-  makes a fault. When no bead is being worked without a fault, red marks a
-  session waiting on a prompt or a bead lacking what its route needs, and
-  rust marks a held bead or a person's turn (a manual stage, or an open
-  ask to the operator). A bead waiting only behind another bead lights no
-  lamp. A stage that can report `changes` carries a
-  signal instead: a lamp on a short post, an unlit outline unless the
-  stage waits, when it lights red or rust as a wait lamp does; a wait on
-  a stage with no signal is a bare lamp. A bead back on `failed` or
-  `changes` lights no lamp: its diamond is its only mark. A stage no
-  route serves is dotted with the faint words `no route`.
-- Tapping a section opens the stage on `/flows`, at its section.
-- Under a depot's diagrams, `off the line: N` holds the open beads in no
-  stage of its flows, each with its stage named: a bead stranded in a
-  stage its flow lacks stands there, since no section can hold it.
+`/flows?panel=1` (the Yard row of the Lines column) lists every depot's
+flows: each flow by name, type and source, with the open beads in no
+stage of its flows under `off the line: N`, each with its stage named —
+a bead stranded in a stage its flow lacks stands there, since no stage
+can hold it. The page has no right column, so its centre runs to the
+window's edge: depots side by side where there is room, stacked on a
+phone.
 
 The whole panel reads itself again on every event of the stream
-([Live pages](#live-pages)): a bead that moves is on its new section
+([Live pages](#live-pages)): a bead that moves is in its new flow's list
 without a reload. The parameter shapes the HTML alone: as JSON the page
-answers the same with it as without it. Every colour the panel uses is a
-named token of the stylesheet (`--panel-*` for the track, with `--running`,
-`--held` and `--accent` for running green, fault red and person's-turn rust,
-and `--late` for the late ring), so the palette changes in one edit.
+answers the same with it as without it.
 
 ## One depot
 
@@ -1743,11 +1711,14 @@ presets. A weighty card shows its weight first, one line a class. A run
 card that is routine approves below it, with fields where the card asks
 for values in the clear; a setup card approves with its preset pick and
 the account typed beside it, the candidate taken instead, or a bare pick
-where the card keeps the account that stands. A card that is weighty but
-not strong has no gate in this window: a secret ask shows no field and no
-giving, a mapping ask shows its options as a list with no pick, a run or
-setup card shows no approval, and each names the terminal command
-instead, where the card is given, picked or approved. Each answers under
+where the card keeps the account that stands. A weighty run or setup
+card approves below under a fresh sign-in where the window holds the
+gate, as the paragraphs after this say; where it holds none it shows no
+approval and names footplate and the terminal command instead, where the
+card is approved. A secret ask shows no field and no giving in this
+window, and a mapping ask shows its options as a list with no pick
+where the window holds no gate for an operator's pick, each
+naming where the card is given or picked. Each answers under
 itself, with its options as buttons where the card offers any, with Later
 and Decline; a run or setup card still names the terminal command beside
 its approval. Every card but a secret's has a words field beside them, in
@@ -1760,32 +1731,80 @@ waits for the user in a stage a manual group works, the outcomes send it
 on as `yardr review` offers them, with a note. Each write carries the
 revision the page was drawn from ([Acting as a user](#acting-as-a-user)).
 
-On a hosted yard, a strong card — trust or code in its weight — approves
-on the page under a fresh sign-in ([Behind an auth
+On a hosted yard, every weighty run or setup card — any class in its
+weight, trust or code among them — approves on the page under a fresh
+sign-in ([Behind an auth
 gateway](#behind-an-auth-gateway)): approving starts the gateway
 re-authentication unless the session's last authentication was already a
-strong-card re-authentication by the operator inside the gateway's
+weighty-card re-authentication by this user inside the gateway's
 window, and the return approves the card it was raised for and no other.
-One fresh sign-in witnesses several strong cards inside the window. A
-self-hosted yard approves strong cards at a terminal on the yard's
-machine, never on the page. A paired device of the operator approves one
-on any yard with no sign-in at all, as it approves any card
-([users.md](users.md#devices)).
+One fresh sign-in witnesses every weighty card approved inside the
+window. A setup card's typed account waits in the yard's memory for
+that return alone, for at most fifteen minutes, as a secret ask's values
+do. For an operator every such card approves that way. A member
+approves only their own cards that way — their own first-device
+pairing, and the card for their own address in a source, which approves
+as their own pairing does — and any other weighty card on a member's
+page shows no button and names footplate, and a click on it is refused
+before any round trip, in words that say an operator's sign-in is what
+the page takes. A self-hosted yard approves weighty cards in footplate
+or at a terminal on the yard's machine, never on the page. A paired
+device of the operator approves one on any yard with no sign-in at all,
+as it approves any card ([users.md](users.md#devices)).
 
-The card is the same wherever it stands, and a strong card approves the
-same way from the needs rows on Home and from the waits on `/line` as on
-its bead's page. The button reads `Approve in <yard>`, beside the fields
+On a hosted yard the operator can give a secret ask from its bead's page
+alone, though it weighs credential and is never strong: the page draws a
+concealed field for each name it asks for and a `Give in <yard>` button,
+typing first and signing in after. Giving starts the same
+re-authentication unless the fresh window already stands; the typed
+values wait in the yard's memory for that return alone, for at most
+fifteen minutes, and no error
+shows one back. The return gives the secret the sign-in witnessed, and
+its answer records the fresh sign-in. A second secret ask inside the
+window gives at once. The needs rows on Home, the waits on `/line`, and a
+member's hosted page draw no field for a secret ask. A member gives their
+own login code from a paired device. A self-hosted yard's page also draws
+no field: there the card names footplate and the terminal command, and
+either door still gives it.
+
+On a hosted yard the operator can pick a mapping ask from its bead's
+page and from the needs rows and the waits on `/line`, though it weighs
+as-user and is never strong: the card draws its options as buttons, and
+every numbered pick — one that writes a user's identity and one that
+writes none alike — starts the same re-authentication unless the fresh
+window already stands, the pick held in the yard's memory for that
+return alone, for at most an hour, with the revision its form was drawn
+from. The return picks what the sign-in witnessed, and its answer
+records the fresh sign-in as an approval's does. A second mapping card
+inside the window picks at once. Later and Decline take no sign-in. A
+member's hosted page draws no pick for a mapping card, and a click on
+one is refused before any round trip, in words that say an operator's
+sign-in is what the page takes. A self-hosted yard's page also draws no
+pick: there the card names footplate and the terminal command, and
+either door still picks it.
+
+The card is the same wherever it stands, and a weighty run or setup
+card approves the same way from the needs rows on Home and from the
+waits on `/line` as on its bead's page, for an operator, and for a
+member only on their own pairing or their own address card, as above.
+The button reads `Approve in <yard>`, beside the fields
 the card asks for (the values in the clear of a run card; a setup's
 presets, the account typed unseen and the candidate), and posts to the
 bead's own handler, so the sign-in and the approval are the bead page's
 own. The person lands on the bead's page afterwards, as after any answer
 given from a row: it shows the card answered and what the approval did,
 or the yard's reason when it refused. Where the view holds no gateway, or the
-yard is not hosted, a strong card shows no button anywhere and names the
-terminal command, as any weighty card does. A routine run or setup card
-approves on its bead's page alone, and a card that is weighty but neither
-trust nor code (a credential, a change outside the yard, a call as a
-user, or a widened read, taken alone) approves nowhere in the web.
+yard is not hosted, a weighty card shows no button anywhere and names
+footplate and the terminal command, as any weighty card does. A routine run or setup card
+approves on its bead's page alone. A mapping card is picked in the web
+only in a hosted window, by an operator under a fresh sign-in, on its
+bead's page and from the needs rows and the waits on `/line` as a
+weighty run or setup card is approved there; everywhere else it shows
+its options as a list, and is picked in footplate or at a terminal.
+A credential card taken alone as a run or
+setup card approves under the fresh sign-in above; as a secret ask it
+gives only as a secret ask does, on its bead's page in a hosted
+window, under the fresh sign-in above.
 
 A depot pack too large for a whole card is written as a summary card
 ([packs.md](packs.md#an-integration-pack-kind-source)). Its sentences name the
@@ -1828,7 +1847,9 @@ A note's files are what `yardr bead note --file` or `--page` attached to it
 (a page made with `--page` is dressed in a frame before it is a blob, so it
 is served as any page is). Each
 image shows below the note's words, with those words as its alt text; each
-page stands as a link, `page <hash8>`, opening the bytes top-level and
+page stands as a link, `page <hash8>` of its current bytes, at its stable
+address `/blobs/note/<seq>/<n>` (the note's seq and the file's number,
+counted from 1), opening the bytes top-level and
 inert; each file stands as a download link, `file <name>`, and downloads
 instead of opening. One the yard no longer holds is a line saying so,
 never a broken icon or link. The JSON names them as the notes have them.
@@ -1838,7 +1859,11 @@ note's words under it. A bead with no note page shows no board. Mail
 pages stand on no board: from here only a note's page opens.
 The bytes come from `/blobs/<hash>`, which serves a note's blob to
 anyone, and on a view that acts a mail's file to its sender or recipient;
-anything else answers as a missing blob. The rule is by kind, not by type:
+anything else answers as a missing blob. A page's bytes come from its
+stable address too: `/blobs/note/<seq>/<n>` serves the note's current
+bytes for that file, so after `yardr bead note --replace` the address a
+reader kept shows the new page, its `ETag` is the new hash, and the old
+hash answers as a missing blob once nothing names it. The rule is by kind, not by type:
 an SVG, a PDF and a text file all download, with
 `Content-Disposition: attachment; filename*=UTF-8''<encoded name>` and the
 type the bytes say. One blob can carry different names on different
@@ -1858,13 +1883,14 @@ page; what survives is the reader following a link out by clicking it.
 The yard's own pages keep their policy, and the no-other-host test still
 holds: a navigation is not a fetch.
 
-Each page carries run beside its static link, opening the same bytes on
-the sandbox origin: the view's second listener, on loopback beside the
-view ([The address](#the-address)), answering blob bytes only and no
-yard route. A reader on this machine goes straight to where the origin
-listens; a reader elsewhere goes by the name the view was reached by,
-on the origin's port, or by the origin's public name where `--pages-host`
-gives one ([Behind a proxy](#behind-a-proxy)).
+Each page carries run beside its static link, opening the same bytes
+at the same stable address on the sandbox origin: the view's second
+listener, on loopback beside the view ([The address](#the-address)),
+answering blob bytes only and no yard route. A reader on this machine
+goes straight to where the origin listens; a reader elsewhere goes
+by the name the view was reached by, on the origin's port, or by the
+origin's public name where `--pages-host` gives one
+([Behind a proxy](#behind-a-proxy)).
 
 A page run there runs its inline scripts under the walls that hold:
 no cookies, no reach into the yard (`connect-src 'none'` stops fetch,
@@ -2096,8 +2122,7 @@ Every open bead with enough history behind it carries an estimate: its
 ETA as a usual range, and a late mark when its stage has run past its
 slow time. The bead's page shows the ETA sentence and the mark under
 the header; cards carry the mark (`⚠ late`, with the whole line as its
-title); the yard panel rings a late light amber; `/line` lists late
-beads under the waits. `yardr bead show` and `yardr prime --bead` print
+title); `/line` lists late beads under the waits. `yardr bead show` and `yardr prime --bead` print
 the same two lines, and `bead show --json` carries the same two
 objects. The socket's `Bead` call carries them too, so footplate reads
 what the view shows.
@@ -2125,10 +2150,9 @@ start.
 
 Late is past the stage's slow time: waiting past the whole-stay p90, or
 running past the claimed-run p90. Stalled means the agent stopped —
-its first prompt idle past the stall limit, a hollow muted lamp on the
-panel; late means it takes long. A bead can be either, both, or
-neither, and late tells no one: there is no event for it, only the
-mark.
+its first prompt idle past the stall limit; late means it takes long. A
+bead can be either, both, or neither, and late tells no one: there is no
+event for it, only the mark.
 
 The objects, as `eta` and `late` on the bead's page, on the cards of
 `/flows` and the rows of `/beads`, and on `/line`'s late rows (`late`
@@ -2430,7 +2454,7 @@ head sequence is deliberately not among it.
 `/telemetry` is the yard's opt-in telemetry switch for a browser: off
 unless turned on, and turning on only on an explicit click. Every reader
 gets the consent words the switch is
-turned on under — the four questions the batch answers and where it
+turned on under — the five questions the batch answers and where it
 goes, the id-only profile, the pseudonymous sentence — while the
 switch itself, the install id and the next payload are the operator's
 alone: with the switch off the operator gets the words with the button
@@ -2451,7 +2475,7 @@ curl -s -H 'Accept: application/json' http://127.0.0.1:8791/telemetry
   "as": "jo",
   "operator": true,
   "telemetry": "on",
-  "questions": "When on, the daemon sends one batch a day to eu.i.posthog.com/batch/ answering four questions: …",
+  "questions": "When on, the daemon sends one batch a day to eu.i.posthog.com/batch/ answering five questions: …",
   "profile": "The batch carries the yard's random install id as PostHog's distinct_id, and …",
   "id_sentence": "This id is pseudonymous, not anonymous: …",
   "install_id": "3f6d1c2e-9a4b-4e7a-b5c1-2d8f0a6e4b90",
@@ -2537,11 +2561,6 @@ anywhere else.
 | `--held` | `#e5675a` | status: blocked or held, and errors |
 | `--late` | `#e8a33d` | status: running past its usual time; the design has no warning colour, so this keeps the nearest amber |
 | `--done` | faint | status: done |
-| `--panel-board` | `#202622` | the panel's track: its board |
-| `--panel-ink` | `#e6e1d3` | the panel's track: stage names |
-| `--panel-dim` | `#9aa39b` | the panel's track: faint names, unlit lamps |
-| `--panel-line` | `#d8d2c0` | the panel's track: the lines |
-| `--panel-platform` | `#3a423c` | the panel's track: quiet lights |
 | `--mono` | | | the main face: `"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace` |
 | `--sans` | | | human words — home's answer, reasons and titles — and longer prose: `"IBM Plex Sans", system-ui, sans-serif` |
 | `--text`, `--small`, `--large` | | | 14px, 11px (labels), 20px (names and figures; on home the answer line alone) |
@@ -2588,9 +2607,8 @@ of the talk page, with `.head`, `.day`, `.differs` and `.own` for how it reads, 
 `.filters` (a row of links, as a config page's way back), `.chips` (the Beads page's depot and stage rows, each a label over a wrapping run of pill links with their counts), `.facts` (name and value rows), `.routes` (one row per route, as `/routes` shows them on a wide window), `.text`
 (what someone wrote, lines kept), `.note`, `.outcomes`, `.bead` (a bead's
 id), `.state` (a status dot and its word),
-`.num`, `.faint`, `.held`, `.landed`, `.dot`, `.diagram` (one drawing of
-the yard panel, panning sideways) and `.off-line` (the beads in no stage of
-a depot's flows).
+`.num`, `.faint`, `.held`, `.landed`, `.dot` and `.off-line` (the beads in
+no stage of a depot's flows).
 
 ## Adding a page
 

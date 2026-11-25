@@ -284,9 +284,9 @@ type Dispatcher struct {
 	// A changed backup_dir is a new target and must be tried at once.
 	backupDownDir string
 
-	// telemetryTold is the last local fault of the telemetry pass that was
-	// said, so each is said once until it is gone. See telemetry.
-	telemetryTold string
+	// telemetryTold and releaseCheckTold are the last local faults of
+	// their passes that were said, so each is said once until it is gone.
+	telemetryTold, releaseCheckTold string
 
 	// timerDue is when the earliest timer left is due, as of the last pass
 	// (see timers); nil with none.
@@ -383,10 +383,10 @@ type Dispatcher struct {
 	// clock is the time a test has set (SetClock), nil for the wall clock.
 	// A test sets it while Run's goroutines read it, so it is read and
 	// written atomically; see now.
-	clock      atomic.Pointer[func() time.Time]
-	retryAfter map[string]time.Time
-	reported   map[string]map[string]string // bead -> kind -> last unroutable reason, to log once per kind
-	stays      map[string]stay              // bead -> its stay in a manual group's stage (waits.go)
+	clock                atomic.Pointer[func() time.Time]
+	retryAfter, mailedAt map[string]time.Time
+	reported             map[string]map[string]string // bead -> kind -> last unroutable reason, to log once per kind
+	stays                map[string]stay              // bead -> its stay in a manual group's stage (waits.go)
 	// quietChecked is when the hooks were last judged quiet (hookquiet.go).
 	quietChecked    time.Time
 	status          map[string]string  // session -> last runner status

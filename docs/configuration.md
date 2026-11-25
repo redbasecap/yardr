@@ -123,9 +123,18 @@ missing prompt does. The file is plain markdown with no placeholder filling:
 the depot writes its literal names.
 
 Crew members have no depot: a crew member's `prompt` is an absolute path (a
-relative one is read from its directory). The yardmaster's is the role of
-the default pack's crew member called `yardmaster`, which `yardr init`
-installs as `~/.yardr/packs/<pack>/roles/yardmaster.md`.
+relative one is read from its directory). The yardmaster's is the yard's own
+file, `~/.yardr/roles/yardmaster.md`, which `yardr init` seeds once from the
+base role yardr carries — the starter pack's yardmaster text, moved into the
+binary — with the operator's name filled in. It is frozen at seeding: yours
+to edit, overwritten by nothing, and a later change to the base reaches new
+yards only. `yardr pack show starter` prints the base as yardr carries it
+now, which is how an operator sees that it has moved and takes it by hand
+if they want it. A yard still prompted from a pack's role under
+`~/.yardr/packs/` is moved to the local file, seeded from the role it reads
+now, by the next `yardr pack apply` that names the yardmaster. No pack
+sets the yardmaster's prompt: a pack whose yardmaster declares a `role:`
+is refused for it, with the section its words move to named.
 
 ## Session limits and outages
 
@@ -577,9 +586,9 @@ Everything yardr keeps for itself lives in one directory, the yard's
 | `logs/sessions/yard-<session>.log` | what the command of an exec group's session printed, for a group that sets no `log` ([groups.md](groups.md#runners)); nothing prunes them |
 | `worktrees/<depot>/<bead>` | herdr bead worktrees |
 | `depots/<name>` | depots registered with `depot add --clone`; `depot rm` leaves the clone here |
-| `packs/<pack>/` | a pack's roles and scripts as an import installed them, filled with the yard's names ([packs.md](packs.md#how-a-pack-maps-to-the-yard)): what the groups and crew members of a depot set up from the pack read. `yardr init` installs the yardmaster's role here, from the default pack, before any depot |
+| `packs/<pack>/` | a pack's roles and scripts as an import installed them, filled with the yard's names ([packs.md](packs.md#how-a-pack-maps-to-the-yard)): what the groups and crew members of a depot set up from the pack read. The yardmaster's prompt is never one of them: it is the yard's own file under `roles/` |
 | `flows/<pack>.<flow>/` | the stage files of a pack's flow, installed the same way |
-| `roles/` | only in a yard from before `yardr init` took the yardmaster's role from a pack: the generic role prompts that init installed (yardmaster, builder, merger, reviewer). Still the last place a group's relative `prompt` is looked up, yours to edit, and no longer written or refreshed; `.shipped.json` there is no longer read |
+| `roles/` | the yard's own role prompts: `yardmaster.md`, seeded by `yardr init` from the base yardr carries and frozen as written (yours to edit; `yardr pack show starter` prints the current base), and, in a yard from before packs, the generic prompts an old init installed (builder, merger, reviewer). Still the last place a group's relative `prompt` is looked up, and no longer written or refreshed but for that one seeding; `.shipped.json` there is no longer read |
 | `linear.secret`, `github.secret`, `crew/<name>.env`, `groups/<group>.env` | credential files, if you keep them here as the examples do ([crew.md](crew.md#outbound-credentials)): yours, yardr creates none of them and reads only the paths a hook, crew member or group names |
 
 The yard lives in that one file, `yard.db`, owned by one process, the yardr
@@ -765,29 +774,31 @@ does the same without the form, for scripts and tests; `--harness` is required
 to create a yard, and nothing is started unless `--start` says so. Either way
 yardr:
 
-1. installs the yardmaster's role: the one the yard's default pack gives its
-   crew member called `yardmaster`. The default pack is the `default_pack`
-   setting, and `starter`, the pack in the binary, on a new yard. That one
-   file goes to `<home>/packs/<pack>/roles/`, where an import of the pack
-   installs its roles, so the first depot set up from the pack finds it
-   there. Where the role says `{{operator}}`, the person the yardmaster
-   brings decisions to, init writes the operator's name (the form's "Your
-   name", `--operator`, default the login name, or `operator` where there is
-   none), and where it says `{{yardmaster}}`, the yardmaster's. The other
-   roles of the pack are installed when a depot is set up from it
-   ([below](#seeding-a-depot-yardr-depot-init)). `--sha256 <digest>`, the
-   digest `yardr pack check` prints for the pack, installs the role only from
-   the pack with that digest and refuses another, naming both, before
-   anything is written ([Pinning a pack](packs.md#naming-a-pack)); init again
-   on a yard that has its yardmaster reads no pack and checks nothing. A
-   default pack with no crew member called `yardmaster` gets the yard none:
-   init says so, and step 3 adds nothing;
+1. seeds the yardmaster's role: the yard's own file,
+   `<home>/roles/yardmaster.md`, written from the base role yardr carries
+   (the starter pack's yardmaster text, in the binary; `yardr pack show
+   starter` prints it as it stands now). The default pack — the
+   `default_pack` setting, else `starter` — is read only for whether it
+   names a crew member called `yardmaster`, and no file of any pack is
+   installed for it. Where the base says `{{operator}}`, the person the
+   yardmaster brings decisions to, init writes the operator's name (the
+   form's "Your name", `--operator`, default the login name, or `operator`
+   where there is none). Seeding is once and only where there is no file:
+   the seeded file is frozen as written, and a change to the base reaches
+   new yards only. The pack's other roles are installed when a depot is
+   set up from it ([below](#seeding-a-depot-yardr-depot-init)).
+   `--sha256 <digest>`, the digest `yardr pack check` prints for the pack,
+   holds the default pack read to that digest and refuses another, naming
+   both, before anything is written ([Pinning a pack](packs.md#naming-a-pack));
+   init again on a yard that has its yardmaster reads no pack and checks
+   nothing. A default pack with no crew member called `yardmaster` gets
+   the yard none: init says so, and step 3 adds nothing;
 2. sets `operator` to the operator's name and `yardmaster` to the
    yardmaster's, `hearer` to the yardmaster's too unless one is stored
    already, and `operator_style` and `operator_note` when they were said
    (the form's answers, `--style`, `--about`);
 3. adds the yardmaster crew member: `kind=<harness>`,
-   `prompt=<home>/packs/<pack>/roles/yardmaster.md`, the model if given, the harness's
+   `prompt=<home>/roles/yardmaster.md`, the model if given, the harness's
    unattended flags as `args`, rotating every 24h. A crew member of that name
    already there is kept as it is, so init runs again on a yard without harm;
 4. sets `default_kind` to the harness, which marks the yard set up.
@@ -802,8 +813,8 @@ and `operator_note` are kept the same way, changed only by `--style` and
 A flag that changes a setting there is taken from the operator alone, as
 `yardr settings set` is ([Settings](#settings)).
 A crew member of the yardmaster's name is kept as it is, and init then reads
-no pack and writes no role: an installed role is brought to a newer pack's
-by `yardr pack apply`, which shows the change first
+no pack and writes no role: the seeded file is the yard's own, and no pack
+apply moves it but off a pack's role, onto itself
 ([upgrading](#upgrading)). What a run that failed leaves, and how the
 next one finishes it, is [below](#a-run-that-did-not-finish).
 
@@ -1305,7 +1316,7 @@ found.
 
 | the run stopped | what the home holds | the next run |
 |---|---|---|
-| after the role | the yardmaster's prompt, `packs/<pack>/roles/yardmaster.md` | `yardr init --harness <kind>` again, or `yardr` in a terminal for the form. The prompt the failed run wrote is written again with the names this run is given |
+| after the role | the yardmaster's prompt, `roles/yardmaster.md` | `yardr init --harness <kind>` again, or `yardr` in a terminal for the form. The seeded prompt is kept as it was written, naming who the failed run was told; the settings this run stores are its own |
 | after `operator`, or after `yardmaster` | the prompt and the settings stored so far | the same. The stored settings stand in for `--operator` and `--yardmaster` when they are not given, and the form's "Yardmaster" starts at what is stored. Its "Your name" starts at who the terminal acts as and takes no other name ([users.md](users.md#who-is-acting)) |
 | after the yardmaster was added | all but `default_kind`. With a crew member the home counts as a yard, so no form runs | `yardr init`, with no flag: the harness is the yardmaster's. Or `yardr` in a terminal, below |
 | the daemon could not be started, or the yardmaster did not come up | a yard that is set up and does not run | `yardr init --start`, which starts the daemon unless one runs and waits again. Or `yardr` in a terminal, below |
@@ -1559,7 +1570,7 @@ value; `--json` has where it is from.
 | key | meaning |
 |---|---|
 | `default_kind` | the agent kind a herdr group or crew member gets when `group add` or `crew add` is given no `--set kind`; also the kind their forms start at. One of the kinds herdr starts. Its presence marks the yard set up. |
-| `default_pack` | the pack `yardr depot init` sets a depot up from when it is given no `--pack`, and the pack `yardr init` takes the yardmaster's role from: a pack's name (one the yard has imported, or one in the binary) or its directory as an absolute path ([packs.md](packs.md#naming-a-pack)). Unset, `starter`, and `dir` for a dir depot. A relative directory is refused, since the setting is read wherever `depot init` is run, and so is a directory with no `pack.yaml`. Changing it moves nothing: it is read when a depot is set up. |
+| `default_pack` | the pack `yardr depot init` sets a depot up from when it is given no `--pack`, and the pack `yardr init` reads for a crew member called `yardmaster` (the yardmaster's role itself is seeded from the base yardr carries, never from a pack): a pack's name (one the yard has imported, or one in the binary) or its directory as an absolute path ([packs.md](packs.md#naming-a-pack)). Unset, `starter`, and `dir` for a dir depot. A relative directory is refused, since the setting is read wherever `depot init` is run, and so is a directory with no `pack.yaml`. Changing it moves nothing: it is read when a depot is set up. |
 | `hearer` | the crew member an approved claim subscribes to the claimed address beside writing it, who then hears that chat ([integrations.md](integrations.md)); `yardr init` stores the yardmaster's name unless one is stored already. Unset, or naming no crew member, an approval writes the address alone. A crew member may propose it as a run ask. |
 | `operator` | the person the role prompts name, agents bring decisions to; `yardr init` stores it (`--operator`, the form's "Your name") and an import fills a pack's roles with it. The operator is a user ([users.md](users.md)): setting a name adds the user when there is none, a crew member's name is refused, and only the operator adds and removes other users. |
 | `operator_style` | how agents should work with the operator: `guide`, `show`, `work` or `report` ([what each tells an agent](#how-agents-work-with-you)). `yardr init` stores it (`--style`, the form's "How should agents work with you?"); both primes print it as instructions, so a change reaches the next session that starts. Unset, the primes say nothing about it. |
@@ -1598,6 +1609,7 @@ value; `--json` has where it is from.
 | `upgrade_from` | the depot whose landed build the yard installs itself after the assembly lands on it (`yardr upgrade`), with the scripts it already runs from `<home>/scripts` ([upgrade.md](upgrade.md#the-scripts)); unset, the assembly installs nothing, and a hand `yardr upgrade` with no depot named takes the latest signed release instead ([upgrade.md](upgrade.md#from-a-signed-release)). Setting it is refused while the operator names no notify source, and names how to set one (`yardr pack apply pushover` or `yardr pack apply telegram`, with `--notify`): with none, a failed install could tell nobody outside the yard. Setting it subscribes the operator to the install's failure kinds (`install_failed`, `rolled_back`) in the same write, and while it is set unsubscribing from either kind is refused: remove the setting first ([subscriptions.md](subscriptions.md#users-as-subscribers)). It names a depot of the yard: setting it to one the yard has not got is refused, and the named depot is not removed until the setting is cleared. For one run without it, `yardr upgrade --from <depot>` names the depot instead, and the caller takes a failure through the exit status and the terminal. |
 | `upgrade_restore` | whether a failed `yardr upgrade` restores the pre-install store copies (`true`) or leaves refused stores down for a person to restore (`false`); default `true`. The setting governs the whole run, every covered yard with it; `YARDR_UPGRADE_RESTORE` and `yardr upgrade --no-restore` override it, the flag for one run ([upgrade.md](upgrade.md#rollback)). |
 | `codesign_identity` | the code-signing identity `yardr upgrade` signs the installed binary with on macOS, under the identifier `dev.yardr.yardr`, so one Developer Tools entry holds across reinstalls ([upgrade.md](upgrade.md#signing-the-binary)); unset, nothing is signed. Set it to the certificate's name, run `yardr upgrade` once, then add the installed yardr in System Settings > Developer Tools. |
+| `auto_upgrade` | whether the daemon mails the operator and the yardmaster when a newer signed release is out (`notify`), or does nothing (`off`); default `off`. The daemon reads it on every pass and asks yardr.dev's `latest.json` at most once a day, mailing once per release (`yardr <new> is out (you run <current>): yardr upgrade`). The ask reads the version alone and verifies nothing: `yardr upgrade` verifies the signed release before it installs, so a spoofed answer mails at most and installs nothing. A coming value, `release`, will install the release on its own; it is refused until that lands. |
 | `quiet_landings` | how many code landings on a depot's base pass before the daemon owes the whole suite a run on a quiet machine ([testing.md](testing.md)); a whole number, default 10 (about two hours at the 60-140 landings a day of 14-16 Oct 2026). `0` turns the quiet run off. The daemon reads it on every event it judges, so a change holds from the next one, with no restart. |
 | `disk_keep_gb` | the gigabytes of free space on GOCACHE's volume below which a landing keeps the disk before its tests run ([setup.md](setup.md#the-machines-disk)): it rotates GOCACHE at a fresh sibling directory (not within 30 minutes of the last rotation), removes a rotated directory once it has stood aside for 30 minutes, and clears go-build directories in GOTMPDIR older than 3 hours. A whole number, default 30. `0` turns the keeping off. The assembly reads it on every landing, so a change holds from the next one. It does not gate the removal of a rotated directory whose 30 minutes are over: the daemon does that itself, whatever this is set to. Nor does it gate the removal, under the test gate's floor, of one that no go process can be using before its 30 minutes are over (the same page). |
 
@@ -1851,9 +1863,12 @@ pack apply`.
 - **Moving an existing depot to a pack** is `yardr depot init <depot>`, when
   you want it: `yardr pack check <pack> --depot <depot>` prints the plan and
   writes nothing. Read it first. The import gives the depot groups of its
-  own (`<depot>-builders`), points its routes at them, sets the yardmaster's
-  prompt to the pack's role, and names every file of the depot it shadows
-  ([seeding a depot](#seeding-a-depot-yardr-depot-init)). The shadowed files
+  own (`<depot>-builders`), points its routes at them, and names every file
+  of the depot it shadows
+  ([seeding a depot](#seeding-a-depot-yardr-depot-init)). The yardmaster's
+  prompt is the yard's own file, never the pack's: an import that finds it
+  on a pack's role moves it to `<home>/roles/yardmaster.md`, seeded from
+  that role, and says so in the plan. The shadowed files
   are then removed from the repository by an ordinary commit, or made the
   source again with `yardr depot source`. A depot shaped by hand can stay
   as it is.

@@ -145,6 +145,7 @@ type Reason struct {
 	To          string            `json:"-"`
 	Options     []store.AskOption `json:"-"`
 	SecretLine  string            `json:"-"`
+	SecretLogin []string          `json:"-"`
 	SecretReach []string          `json:"-"`
 	RunCommand  string            `json:"-"`
 	RunDoes     []string          `json:"-"`
@@ -163,6 +164,7 @@ type Reason struct {
 	RunAsk       []string `json:"-"`
 	SetupAccount []string `json:"-"`
 	SetupHost    string   `json:"-"`
+	SetupSite    string   `json:"-"`
 	// Weight is the card's weight, each class with the yard's line, as
 	// the yard weighed it when it wrote the card, absent on a routine
 	// card; Identity is what a mapping ask maps, absent on any other
@@ -170,6 +172,13 @@ type Reason struct {
 	// offers no pick on a weighty mapping card, as the bead's page does.
 	Weight   []store.AskWeight  `json:"-"`
 	Identity *store.AskIdentity `json:"-"`
+	// Own is whether the run card is the asked user's own card — their
+	// own device pairing or their own user key — set where the run's
+	// argv and the ask's To are at hand (askReason), never read from
+	// the command string the row carries. A member's row approves such
+	// a card as the bead's page does; any other weighty row of theirs
+	// keeps the no-gate line. HTML-only, as the weight is.
+	Own bool `json:"-"`
 }
 
 // Reasons are why the bead waits, in one line.
@@ -656,9 +665,14 @@ func askReason(r store.ResolvedAsk) Reason {
 		out.RunBack = r.Ask.Run.Back
 		out.RunBackBy = r.Ask.Run.BackBy
 		out.RunAsk = r.Ask.Run.Ask
+		// The asked user's own card, from the argv at hand: their own
+		// pairing (argv's user is the asked user) or their own user key.
+		argv := r.Ask.Run.Argv
+		out.Own = (store.IsDevicePairRun(argv) && argv[3] == r.Ask.To) ||
+			(store.IsUserKeyRun(argv) && argv[2] == r.Ask.To)
 	case r.Ask.Secret != nil:
 		// The yard's line, never the asker's words: what is asked for.
-		out.SecretLine, out.SecretReach = r.Ask.Secret.Line(), r.Ask.Secret.Reach()
+		out.SecretLine, out.SecretLogin, out.SecretReach = r.Ask.Secret.Line(), r.Ask.Secret.LoginLines(), r.Ask.Secret.Reach()
 	case r.Ask.Setup != nil:
 		out.SetupPack = r.Ask.Setup.Pack
 		out.SetupDoes = r.Ask.Setup.Does
@@ -666,6 +680,7 @@ func askReason(r store.ResolvedAsk) Reason {
 		out.SetupBackBy = r.Ask.Setup.BackBy
 		out.SetupAccount = r.Ask.Setup.Account
 		out.SetupHost = r.Ask.Setup.HostTemplate
+		out.SetupSite = r.Ask.Setup.SiteTemplate
 	}
 	if r.Ask.Recommend >= 1 && r.Ask.Recommend <= len(r.Ask.Options) {
 		out.Recommend = r.Ask.Recommend

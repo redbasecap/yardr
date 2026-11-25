@@ -38,6 +38,16 @@ const askRunList = `  peer add <name> <invite>
   source set <source> calls_per_hour=<n>|updates_per_hour=<n>
       one caller makes that many calls of the source in an hour, or that
       many updates among them; a lower number too, which is the operator's
+  source set <source> base=<name>|host=<host>|site=<site>
+      where the source's calls go: a region base the declaration names,
+      a host that fills its base_template for a server of your own, a
+      site that fills its path_template as one path segment, or
+      nothing after base=, host= or site= for the declaration's own base again;
+      the card shows the address now and the one proposed whole, and
+      what happens to a standing credential (held back until it is
+      given again, naming the host and site it was given for, or
+      re-paired with a region base at once); only the
+      operator takes it back (weighty, outside)
   source grant <source> read|<call>|--preset <preset> --group <group>|--crew <crew member> [--as <user>]
       a group's sessions or a crew member may make the source's read
       calls, or one call by its name; both flags repeat, and it is one
@@ -51,12 +61,6 @@ const askRunList = `  peer add <name> <invite>
       card shows it whole and a replacement's changes (strong, code); a
       commands-free add runs at approval, one naming commands is carried
       out by the server after it; an absolute program stays in a terminal
-  source rm <name>
-      the source is removed with the grants of its calls and the counts
-      and keys kept for it; the files of its commands go too, removed by
-      the server after the approval, and the file its credential is read
-      from stays; subscriptions, followed threads and hooks that name it
-      stay and the card counts them
   source move <from> <to>
       what the yard keeps under the source <from> is folded into the source
       <to>, which the yard declares: its hooks, identities, crew grants of
@@ -65,10 +69,6 @@ const askRunList = `  peer add <name> <invite>
       any); what both hold is kept once; there is no such command at a
       terminal (a pack apply folds the records of its own sources): the
       card is the way in, and the links of <from> move with link move
-  source ignore <source> --rm <id>
-      a sender ignored in the source is heard again: their next message
-      follows the hook's word, a fresh mapping card under unknown, heard
-      as an outsider under allow
   source check <source> --user <user>
       one real test message to the user through the source, sent when
       the user or the operator approves; a check without --user needs
@@ -99,6 +99,13 @@ const askRunList = `  peer add <name> <invite>
       checkout, any other flag and a plan that asks stay in a
       terminal; --setup installs a pack of kind source, embedded or
       applied from a directory in a terminal
+  pack install <pack>
+      the programs the pack's declarations name under needs that this
+      machine lacks, installed when approved: the card shows each
+      missing program, its pack, and its install file whole with its
+      sha256, and approving runs exactly those bytes (strong, code);
+      a program that is here stays silent, and an install that names
+      an absolute program stays in a terminal
   hook add <name> --source <declared source> [--unknown unknown|allow|ignore] [--as <crew member>] [--map <type>:<stage>=<state>]
       a new webhook endpoint POST /hooks/<name> for the declared
       source, or the hook that stands replaced whole, verified with
@@ -116,12 +123,6 @@ const askRunList = `  peer add <name> <invite>
       dropped and counted, and its secret file stays where it is; the card
       names what was set on it (strong, trust), and it is how a hook the
       yardmaster added for the operator is taken back
-  link move --from-source <source> --to-source <source>
-      the links of one source are moved to another on the same host: the
-      card counts the links and names the beads, the URLs stay as they are,
-      and the whole move is refused where the command refuses it (a bead
-      that would track two issues, a URL the source takes no issue at);
-      moving one issue to another bead needs no approval
   subscribe <user> yardr [--done] [--where <key>=<value>]
       a user is told of the yard's own events in their inbox; with --done,
       --where or both
@@ -147,8 +148,6 @@ const askRunList = `  peer add <name> <invite>
       types it
   user add <name>
       a person becomes a user of the yard, and reads mail from now on
-  user rm <name>
-      a user goes, with their subscriptions and devices; the mail stays
   user invite <name> --email <address> [--role operator] [--crew-talk yes|no]
       a teammate is invited by email: a user is made (a member, or an
       operator with --role operator), the address is mapped to them in
@@ -161,11 +160,17 @@ const askRunList = `  peer add <name> <invite>
       a teammate goes: the removal is reported to the edge first, then
       the user, their devices and the mapping go; a plain user, whom no
       mapping names, is removed with user rm instead
-  user device rm <user> <device>
-      the device is removed: its token is refused from now on, the streams
-      it held are closed and what was queued to tell it is dropped; what it
-      did stands, and the card says how many devices the user keeps; asked
-      of the user whose it is or of the operator, and either approves it
+  user login <name>
+      a user is given a login of their own, or their sign-in is opened
+      again: where no group carries their login the card makes the whole
+      first-time setup (the login folder, the env file, a copy of every
+      herdr group an operator route serves, a twin route for each of
+      their beads and the yardmaster's conversation on their login), and
+      where one does it shows the env file and only opens the sign-in
+      again; the approval is carried out by the server after it, which
+      opens the sign-in's bead and launches the sign-in detached, so
+      approving never waits for the person's code (strong, code, and
+      as-user for a first login; as-user for a sign-in again)
   user device pair <user> <device> [--url <address>]
       a pairing is opened for the device when approved: its code, good
       for ten minutes and for one device, is answered once to the
@@ -222,7 +227,7 @@ const askRunList = `  peer add <name> <invite>
       wrote is not one to name; no other setting rides in with it, and
       another member's kind, model and directory are the yardmaster's to
       run for the operator on their mail
-  group set <name> prompt=<file> | cmd=<command> | preset=<preset> | effort=<level>
+  group set <name> prompt=<file> | cmd=<command> | preset=<preset> | effort=<level> | model=<model>
       the same for a group, and for an exec group's command (one word:
       the line is split at spaces); approving a prompt writes its carried
       text to a read-only file of the yard's own, roles/<name>.<digest>.md,
@@ -232,21 +237,11 @@ const askRunList = `  peer add <name> <invite>
       lists them), which the card shows as the flags each session is given,
       or the word default, which returns the group to its harness's own
       effort, as a card takes no --unset: the card shows that no flag is
-      given, and a group that sets no effort refuses it; a kind, a
-      directory and the rest of a group are not this card's: the
-      yardmaster sets those the operator has delegated on their mail, and
-      the rest are typed in a terminal
-  group rename <old> <new>
-      the group is called by its new name and everything that names it
-      follows, in one write: its routes, the beads it owns and their live
-      sessions (which go on, none released), the grants its sessions hold,
-      its arrival estimates, the subscriptions that filter on it, the lists
-      of members that name a script group and the pack imports that recorded
-      it; the old name is free after; a name in use, or one that pack imports
-      give a depot's groups (<depot>-<name>), is refused
-  crew identity <name> --source <source> [--id <id>] [--key <key>]
-      who the crew member is in the source: mentions and assignments of
-      the id or key there are then addressed to it
+      given, and a group that sets no effort refuses it; a model is the
+      name the group's kind starts its agents with, shown now and as it
+      will be; a kind, a directory and the rest of a group are not this
+      card's: the yardmaster sets those the operator has delegated on
+      their mail, and the rest are typed in a terminal
   user identity <user> --source <source> [--id <id>] [--key <key>]
       who the user is in the source: threads opened there for them are
       then assigned to the id or key, and where the source hears by
@@ -258,42 +253,24 @@ const askRunList = `  peer add <name> <invite>
       while hook_public_url binds nothing and is a run ask's
   peer rename <old> <new>
       the link is called by its new name; its key and what it carries stay
-  bead update <bead> --originator <user>
-      the bead is for the user
-  timer rm <id>
-      another's timer is removed; one's own needs no approval
   up
       everything the yard needs that is not running is started, and what
       runs is left alone; safe to repeat, so an approval is never stale
-  crew restart <name> [--for <user>]
-      a fresh session of the crew member starts once the current one is
-      idle; with --for, of its conversation session for the user
   depot test <depot>
       the depot's test command becomes the command --run-test carries
       beside the ask: the card shows the depot, the command now and the
       proposed one whole, and approving sets exactly that; clearing one
       stays in a terminal
-  depot base <depot> <base>
-      bead branches of the depot start from the base; the card shows the
-      depot, the base now and the proposed one, and approving sets exactly
-      that; a directory depot has no base
-  route set <id> --group <group>
-      the one named rule of a depot sends its beads to the group: the card
-      names the rule's id, its scope, every filter it sets and its chain
-      with each group's condition, changes only the chain's first group,
-      and carries the filters and conditions unchanged (weighty, code);
-      a yard-wide rule is not changed where it stands on this card: set
-      it aside for one depot with route add --depot, or change it in a
-      terminal; the yardmaster files it from the operator's own mail only
-  route add --stage <stage> --group <group> [--depot <depot>]
-      a new rule where its scope has none, with the filters it names; with
-      --depot and a key a yard-wide rule takes, this depot's own set-aside
-      of that rule: its key and chain carried whole with only the first
-      group changed, filed only where no own rule for the key stands in
-      the depot, and stale where the yard-wide rule moved or one appeared
-      (weighty, code); its take-back is route rm of the own rule at a
-      terminal, named on the card; the yardmaster files it from the
-      operator's own mail only
+  depot add <name> --clone <url> [--kind git] [--base <branch>]
+      a first git depot, cloned into the yard's depots directory when
+      approved and carried out by the server: the card shows the name,
+      the kind, the fetch whole, the base and the test command the
+      --run-test beside it carries whole or none (none is added now and
+      named later on a depot test card), and what credential the clone
+      answers with; a fetch on a push source's host answers with that
+      source's token through its helper, and one with no token standing
+      is refused; a directory depot, a re-clone and a removal stay in a
+      terminal (weighty, outside, and code where a test rides)
   flow set <name>
       a store flow's stages, carried whole beside the command from the
       file --run-flow names or as F: lines in order, its stage order
@@ -306,4 +283,18 @@ const askRunList = `  peer add <name> <invite>
       naming the beads it would strand is refused at the ask and again
       at approval; the yardmaster files it from the operator's own mail
       only
+  flow set-stage <flow> <stage> [--digest <sha256|none>]
+      a store flow's stage file, <home>/flows/<flow>/<stage>.md, created
+      or replaced with the text the file --run-flow names carries beside
+      the command (not F: lines): the card shows the text that stands and
+      the text proposed, each whole, and a warning where its ## Ask
+      section is broken; approving writes exactly that text, whole, at the
+      mode of the file it replaces, and only where the file is as the card
+      saw it (--digest names the file's SHA-256, or none where none
+      stands, and a file that moved since is refused at the ask and again
+      at approval); a flow a pack manages is carried the same way, its
+      card saying that yardr pack apply then keeps the yard's copy and
+      sets the pack's only with --take file/<name>; a flow of a depot's
+      repository is refused, naming the file to change on its branch
+      (weighty, code)
 `

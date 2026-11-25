@@ -124,7 +124,8 @@ var Access = map[string]Class{
 	"Advance":     Agent,
 	"AdvanceNote": Agent, // but along done-safe's edge on a security path (store.AdvanceNote)
 	"Done":        Agent,
-	"CloseBead":   Agent, // its own bead alone (store.CloseBead)
+	"CloseBead":   Agent,    // its own bead alone (store.CloseBead)
+	"RemoveBead":  Operator, // a memory removed for good is the operator's alone (store.RemoveBead)
 	"Reopen":      Admin,
 	"SetHold":     Agent, // but not to lift a hold (store.SetHold)
 	"Release":     Agent,
@@ -157,6 +158,8 @@ var Access = map[string]Class{
 	"MarkNoteUntold":    Admin,
 	"Notes":             Read,
 	"NoteBlob":          Read,
+	"NoteFileBlob":      Read,
+	"ReplaceNotePage":   Agent,
 	"MailBlob":          Read,
 	"Delegation":        Read,
 	"DelegationBlob":    Read,
@@ -190,11 +193,16 @@ var Access = map[string]Class{
 	"DeferAskExpected":     Admin,
 	"DeclineAskExpected":   Admin,
 	"TakeBackAsk":          Agent,
+	"FallThroughStageAsk":  Admin, // the daemon's waits scan alone, as LogDispatch
 	"GiveSecret":           Admin,
 	"LoginWait":            Admin,
 	"LoginWaitReady":       Read,
 	"ApproveAsk":           Admin,
 	"ApproveSetup":         Admin,
+	// A dry run of a crew set card shows what the card would: the prompt
+	// a member runs now, whole, which Line keeps to the operator. It is
+	// the command's own class, no reader's.
+	"PlanRun": Admin,
 
 	// Depots, groups, routes, flows: how the yard routes its work.
 	"PutDepot":       Admin,
@@ -212,6 +220,7 @@ var Access = map[string]Class{
 	"Routes":         Read,
 	"DeleteRoute":    Admin,
 	"PutFlow":        Admin,
+	"PutStageFile":   Admin,
 	"ListFlows":      Read,
 	"GetFlow":        Read,
 	"DeleteFlow":     Admin,
@@ -242,6 +251,7 @@ var Access = map[string]Class{
 	"FailureCount":        Read,
 	"SessionScreen":       Operator, // a screen can show what an agent printed, a secret among it
 	"Line":                Operator, // a cmd and a prompt are the operator's to read
+	"Prime":               Operator, // a role and a depot's rules are the operator's to read, and on the socket alone
 
 	// The log and the store.
 	"Events":        Read,

@@ -50,8 +50,15 @@ import (
 //
 // An ask for a hook's signing secret (AskSecret.Hook) is given the same
 // way into the hook's secret file the yard owns (giveHookSecret), by the
-// operator alone: the hook the ask names must still be the yard's to
-// add, and the hook add that names the file is a second ask.
+// operator alone: a hook that stands is rotated only where it still
+// serves the source and names that file. For a new hook, hook add is a
+// second ask; for a standing hook, this ask rotates the secret in place.
+//
+// An ask for a Google account's sign-in (AskSecret.Google) is given the
+// same way into that account's credentials file (giveGoogle), by the
+// operator for the yard's own account and by the person alone for
+// their own: the pasted export is checked as an authorized_user JSON
+// and written 0600, and no refusal or answer repeats it.
 //
 // An ask for a waiting login's input (AskSecret.Login) is handed to the
 // login that waits under its reference (LoginWait) and goes to no file: the
@@ -86,6 +93,12 @@ import (
 // first (weighed). Without it the giving is refused before anything is
 // written (weighedRefusal): no file, no note, and the ask stays open. The
 // yard checks what the client says and no more.
+//
+// A giving that carries a fresh sign-in (WithFreshWitness, the hosted
+// web's) is judged by that sign-in as a strong card's approval is
+// (freshGivenRefusal), and its answer's event records the fresh sign-in
+// (addGiven) where it came through no device. A giving that carries none
+// behaves exactly as it always has, on a device or a terminal alike.
 func (s *Store) GiveSecret(ctx context.Context, id string, ask uint64, values map[string]string, actor string, weighed bool) (*SourceKeyed, error) {
 	var k sourceKey
 	var lg loginSent
@@ -126,7 +139,9 @@ func (w *wtx) giveSecret(ctx context.Context, s *Store, home, id string, ask uin
 	sec := asked.Secret
 	// Before the note is put: an agent's giving writes nothing, not even
 	// what the transaction would take back.
-	if sec.Harness != "" {
+	if sec.Google != "" {
+		err = w.may(ctx, actor, ActGiveGoogleCredentials, Object{Kind: KindUser, Name: sec.Google, To: sec.As})
+	} else if sec.Harness != "" {
 		err = w.may(ctx, actor, ActGiveHarnessKey, Object{Kind: KindHarness, Name: sec.Harness, To: sec.Crew})
 	} else if sec.User != "" {
 		err = w.may(ctx, actor, ActTell, Object{Kind: KindUser, Name: sec.User})
@@ -155,6 +170,12 @@ func (w *wtx) giveSecret(ctx context.Context, s *Store, home, id string, ask uin
 	}
 	if err := weighedRefusal(ask, weight, weighed); err != nil {
 		return err
+	}
+	if err := w.freshGivenRefusal(ask, weight, actor); err != nil {
+		return err
+	}
+	if sec.Google != "" {
+		return w.giveGoogle(row, ask, sec, values, actor, k)
 	}
 	if sec.Harness != "" {
 		return w.giveHarnessKey(ctx, home, row, ask, sec, values, actor, k)
@@ -190,7 +211,7 @@ func (w *wtx) giveSecret(ctx context.Context, s *Store, home, id string, ask uin
 	if err != nil {
 		return err
 	}
-	if _, err := w.addNoted(row, NoteAnswer, string(text), actor); err != nil {
+	if _, err := w.addGiven(row, string(text), actor); err != nil {
 		return err
 	}
 	if sec.Hook != "" {
@@ -214,10 +235,20 @@ func (w *wtx) giveSecret(ctx context.Context, s *Store, home, id string, ask uin
 // rename last, so the store never says "gave" of a value the file does
 // not hold, and a commit that fails after the rename leaves the value
 // in the file with the ask open (KeyNotRecorded, through k). It refuses
-// a hook the yard has taken since the ask, as askedHookSecret refused
-// one it had then: the hook that stands names its own secret file.
+// a hook that has been added, moved to another source or repointed to a
+// custom file since the ask, as askedHookSecret refuses one that
+// stands so. It clears no Blocked: the receiver reads the file on every
+// delivery and clears it there.
 func (w *wtx) giveHookSecret(home string, sec *AskSecret, src *Source, values map[string]string, k *sourceKey) error {
-	if w.Bucket(bHooks).Get([]byte(sec.Hook)) != nil {
+	var standing Hook
+	had, err := get(w.Tx, bHooks, sec.Hook, &standing)
+	if err != nil {
+		return err
+	}
+	switch {
+	case had && standing.Source != sec.Source:
+		return fmt.Errorf("hook %s is in the yard already: it serves the source %s, not %s", sec.Hook, standing.Source, sec.Source)
+	case had && standing.SecretFile != HookSecretFile(home, sec.Hook):
 		return fmt.Errorf("hook %s is in the yard already: its signing secret is the file it names, changed in a terminal", sec.Hook)
 	}
 	d, err := src.Declaration()
@@ -403,7 +434,7 @@ func (w *wtx) giveHarnessKey(ctx context.Context, home string, row *beadRow, ask
 	if err != nil {
 		return err
 	}
-	if _, err := w.addNoted(row, NoteAnswer, string(text), actor); err != nil {
+	if _, err := w.addGiven(row, string(text), actor); err != nil {
 		return err
 	}
 	k.harness, k.login, k.names = &h, operator, names
@@ -455,7 +486,7 @@ func (w *wtx) giveLogin(s *Store, row *beadRow, ask uint64, sec *AskSecret, to s
 	if err != nil {
 		return err
 	}
-	_, err = w.addNoted(row, NoteAnswer, string(text), actor)
+	_, err = w.addGiven(row, string(text), actor)
 	return err
 }
 

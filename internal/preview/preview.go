@@ -64,6 +64,11 @@ const (
 	crashLimit  = 5
 )
 
+// TerminateGrace is how long a stop waits after TERM before KILL: kill's
+// fuse for the process's exit, and terminateGroup's waits after TERM and
+// after KILL (a variable so a test need not wait it out).
+var TerminateGrace = 2 * time.Second
+
 // Supervisor keeps a yard's approved previews running.
 type Supervisor struct {
 	Store Store
@@ -100,7 +105,7 @@ type Supervisor struct {
 	over     map[string]time.Time // app -> first moment over the memory cap
 	// portProbe is the readiness check waitPort uses; tests set it to observe
 	// a request before they release a held app.
-	portProbe func(int) string
+	portProbe func(int) (string, portState)
 	// life is the context Run was given, kept for the watchers of every
 	// start (see lifetime); nil until Run begins.
 	life         context.Context
@@ -558,11 +563,11 @@ func terminateGroup(pgid int) {
 		return
 	}
 	_ = syscall.Kill(-pgid, syscall.SIGTERM)
-	if waitGroupGone(pgid, 2*time.Second) {
+	if waitGroupGone(pgid, TerminateGrace) {
 		return
 	}
 	_ = syscall.Kill(-pgid, syscall.SIGKILL)
-	waitGroupGone(pgid, 2*time.Second)
+	waitGroupGone(pgid, TerminateGrace)
 }
 
 func waitGroupGone(pgid int, wait time.Duration) bool {
@@ -622,7 +627,14 @@ func pruneExits(exits []time.Time, now time.Time) []time.Time {
 
 // watchBind checks, within BindWait of a start, that the preview holds
 // its approved port on loopback alone. A wider bind is stopped and
-// refused; no bind at all is failed.
+// refused; no bind at all is failed. Bound is latched only by a dial
+// that connects (probeLoopback's portBound): a look that proves neither
+// bound nor free, a timeout above all, polls on without latching, so
+// the no-listen verdict still lands at the deadline. Under timeouts so
+// total that a bound app never proves it, the verdict fails it wrongly
+// instead of watching for ever: fail-closed and on the row. Reading a
+// timeout as answered stays with the spawn guard alone, through
+// loopbackHost, which must not start onto a taken port.
 func (s *Supervisor) watchBind(ctx context.Context, app string, port int, pr *proc) {
 	deadline := time.Now().Add(s.bindWait())
 	nextWideCheck := time.Time{}
@@ -636,8 +648,10 @@ func (s *Supervisor) watchBind(ctx context.Context, app string, port int, pr *pr
 			}
 			nextWideCheck = now.Add(250 * time.Millisecond)
 		}
-		if !bound && loopbackHost(port) != "" {
-			bound = true
+		if !bound {
+			if _, state := probeLoopback(port); state == portBound {
+				bound = true
+			}
 		}
 		s.mu.Lock()
 		gone := s.running[app] != pr
@@ -845,7 +859,7 @@ func (s *Supervisor) kill(app string) {
 	}
 	select {
 	case <-pr.done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(TerminateGrace):
 		if pr.pgid > 0 {
 			_ = syscall.Kill(-pr.pgid, syscall.SIGKILL)
 		}

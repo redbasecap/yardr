@@ -176,7 +176,7 @@ token is revoked per device on the yard: `yardr user device rm <user> <device>`.
 
 **A lost phone, with no terminal at hand.** `yardr user device rm` needs a
 terminal on the yard's machine, and the operator of a hosted yard has none
-there. Ask the yardmaster for the card that removes the device (`user device
+there. Ask the yardmaster to file the command as a general card (`user device
 rm <user> <device>`, [chat.md](chat.md#questions-for-you)) and approve it from
 another paired device: the yard then refuses the phone's token itself. You can
 also cut the phone off at the edge, whose gate is your
@@ -233,6 +233,13 @@ the call came sealed, so the edge carries it as ciphertext and reads nothing of
 it. The same call from a plain device is refused, and pairing it again with the
 QR makes its calls sealed. Each code is used once, within minutes, and the yard
 hands it to the waiting login in its memory and keeps it nowhere.
+A member's own Google sign-in (the export of `gws auth export --unmasked`,
+[google.md](google.md#step-1-the-gws-login)) crosses the same way only from a
+device paired with the QR: a device sealed in place, which carries the code
+above, does not carry it, since the export is a refresh token that is written
+to disk and lasts where the code is used once and kept in memory, and pairing
+the device again with the QR lifts that. A plain call for it is refused in
+words that name the QR-paired device and the terminal command.
 A session's screen crosses with the approvals: `SessionScreen` is taken from
 a paired device of the operator down the link, as from the yard's own
 machine. On a plain call the edge reads the screen with the device's
@@ -256,7 +263,8 @@ plain, from a paired device of the operator: the service runs the edge and the
 machine the yard lives on, and the operator has no shell there to answer at (the
 yard's `hosted` setting, [configuration.md](configuration.md#settings)). A
 device of a user who is not the operator gives no secret down the link on
-either, but the code of their own sign-in on a sealed call (above). The grant
+either, but the code of their own sign-in on a sealed call, and their own
+Google sign-in on a sealed call from a device paired with the QR (above). The grant
 list,
 `SourceGrants`, carries no credential but is never read through the edge, on
 either. A device call cannot read or change the telemetry switch through the
@@ -274,7 +282,7 @@ checks the gateway's JWT and acts as the mapped yard user.
 | how the edge reaches it | TCP to its container or droplet | the link the yard opened |
 | footplate | Kratos session plus device token, pairing by code | the same, through the link |
 | web view | `https://my.yardr.dev/?yard=<name>`, signed in as the account that owns the yard | the same, through the socket the view keeps to the edge ([below](#the-web-view-of-a-connected-yard)) |
-| secrets given from a device | every secret, from the operator's devices, the account a setup types among them; a member's own sign-in code, from their sealed device | every secret, from the operator's sealed devices, and the code of a harness login from any of their devices; the account a setup types is answered at the yard's machine; a member's own sign-in code, from their sealed device |
+| secrets given from a device | every secret, from the operator's devices, the account a setup types among them; a member's own sign-in code, from their sealed device; a member's own Google sign-in, from their device paired with the QR | every secret, from the operator's sealed devices, and the code of a harness login from any of their devices; the account a setup types is answered at the yard's machine; a member's own sign-in code, from their sealed device; a member's own Google sign-in, from their device paired with the QR |
 | who runs it, upgrades, backs up | the service | the person |
 | invite list | yes, for the trial | no: any verified account connects its own yard, and gets no hosted yard |
 
@@ -433,17 +441,25 @@ down the link and waits up to 2 seconds for the answer, which it passes back
 to the sender byte for byte. That keeps the yard's own answers working: a
 handshake answered from the verified body, a 401 for a bad signature, a 200
 for a dropped stranger. With the yard not connected, or no answer in time,
-the edge keeps the delivery and answers the sender `202` with the queued
-entry's id. GitHub does not redeliver on its own, so keeping it is the only
-way it is not lost. On reconnect the edge sends the queue oldest first; the
+the edge keeps the delivery and answers the sender `200` with the queued
+entry's id. The answer is `200` and not `202`: Linear takes nothing else
+as delivered, so the router keeps `200` for every kept delivery. GitHub
+does not redeliver on its own, so keeping it is the only way it is not
+lost. On reconnect the edge sends the queue oldest first; the
 yard serves each and sends `ack` once it is recorded or refused, and only
 then does the edge delete it. A live frame that ran out of time is the same
 queued entry: if the yard's answer arrives later, it counts as that entry's
-ack.
+ack. An answer that recorded nothing and may succeed when sent again — the
+yard's 5xx, from its store or a blocked secret file — is no ack on either
+path: for a queued entry the yard sends no ack, and for a live delivery it
+sends no answer at all, so the entry stays queued and is sent again on the
+next connect. From the edge's side the rule is the status: a late answer
+counts as the kept entry's ack only at 200-499, recorded or refused, and a
+5xx or missing status keeps the entry for the next connect.
 
 **What bounds the queue.** Anyone on the internet can post to a hook URL, and
 the edge cannot tell a real delivery from junk, since only the yard holds the
-secret. So every bound is checked before the `202`, and a request past one is
+secret. So every bound is checked before the `200`, and a request past one is
 refused, never kept:
 
 - **a body of at most 1 MiB**, the yard's own limit; a larger one is answered
@@ -492,7 +508,7 @@ with a fresh time.
 **Save a Slack URL with the yard connected.** Slack sends `url_verification`
 when the URL is saved in its app settings, and expects the challenge back in
 the answer. The edge never answers a handshake, since it cannot verify one,
-so one that arrives while the yard is away is queued and answered `202`, and
+so one that arrives while the yard is away is queued and answered `200`, and
 Slack shows the URL as not verified. Save the URL with the yard connected,
 which is when the hook is being set up anyway, and save it again if Slack
 refuses.

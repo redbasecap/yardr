@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -124,40 +125,7 @@ type Flows struct {
 	// Head is the yard's newest seq when the page was read, before its
 	// beads: the stream after it (/events?after=) brings every later move.
 	Head uint64 `json:"head"`
-	// rfs and groups are what the panel draws from: the flows as the store
-	// reads them, beside Depots, and the yard's groups for the buildings.
-	// HTML-only: the JSON never carries them.
-	rfs    [][]store.DepotFlow
-	groups []store.Group
-	// marks and lamps are the panel's blocked vocabulary, read when the
-	// panel is asked for: per bead what colours its block, per stage
-	// whether a wait lamp burns. HTML-only like the panel itself.
-	marks map[string]panelMark
-	lamps map[string]flowLamp
 }
-
-// panelMark is what colours one bead's block on the yard panel: gave up,
-// stalled, blocked on a prompt, waiting on a dependency, back on failed or
-// changes, running past its usual time. Held and working are the card's
-// own.
-type panelMark struct {
-	gaveUp     bool
-	stalled    bool
-	blocked    bool
-	dep        string // the first open blocker's full id, "" when none waits
-	failedBack bool
-	// late is the bead's stage age against the p90, "" when it is not
-	// late: an amber ring around its light, named in its title.
-	late string
-}
-
-// flowLamp is a stage's wait lamp on the yard panel.
-type flowLamp string
-
-const (
-	lampFault flowLamp = "fault"
-	lampTurn  flowLamp = "turn"
-)
 
 type FlowsDepot struct {
 	Name  string       `json:"name"`
@@ -277,7 +245,7 @@ func (s *Server) flows(ctx context.Context) (*Flows, error) {
 		return nil, err
 	}
 	manual := manualClaims(sessions)
-	out := &Flows{Depots: []FlowsDepot{}, Head: head, rfs: [][]store.DepotFlow{}, groups: groups}
+	out := &Flows{Depots: []FlowsDepot{}, Head: head}
 	for _, depot := range depots {
 		beads, err := s.st.ListBeads(ctx, store.BeadFilter{Depot: depot.Name, Viewer: s.acting(ctx)})
 		if err != nil {
@@ -290,7 +258,6 @@ func (s *Server) flows(ctx context.Context) (*Flows, error) {
 		if err != nil {
 			fr.Error = err.Error()
 		}
-		out.rfs = append(out.rfs, rfs)
 		for _, rf := range rfs {
 			col := FlowColumn{Name: rf.Flow.Name, Type: rf.Type, Source: rf.Source.String(), Stages: []FlowStage{}}
 			files := rf.StageFiles
@@ -390,15 +357,9 @@ func (s *Server) handleFlows(w http.ResponseWriter, r *http.Request) {
 	}
 	p := Page{Template: "flows", Title: "Flows", Menu: "flows", Data: d, head: d.Head, stream: "card"}
 	if panel(r) {
-		// The yard panel: the same flows drawn as track, which reads
-		// itself again on every event of the stream. The JSON is the
-		// page's either way: the parameter shapes the HTML alone.
-		if !wantsJSON(r.Header.Values("Accept")) {
-			if err := s.panelMarks(r.Context(), d); err != nil {
-				s.fail(w, r, err)
-				return
-			}
-		}
+		// The yard panel: the same flows as a list, which reads itself
+		// again on every event of the stream. The JSON is the page's
+		// either way: the parameter shapes the HTML alone.
 		p.Template, p.Title, p.Menu, p.stream, p.Wide = "panel", "Yard", "yard", "seq", true
 	}
 	s.respond(w, r, p)
@@ -571,6 +532,57 @@ func (s *Server) handlePagesBlob(w http.ResponseWriter, r *http.Request) {
 	serveBlob(w, r, s.home, hash, ref)
 }
 
+// noteFile is the note file the stable address /blobs/note/<seq>/<n>
+// names, as NoteFileBlob serves it: a seq or number that does not parse
+// answers as a missing blob, as an n the note has no file at does.
+func (s *Server) noteFile(ctx context.Context, r *http.Request) (*store.BlobRef, error) {
+	seq, err := strconv.ParseUint(r.PathValue("seq"), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("note %q: %w", r.PathValue("seq"), store.ErrNotFound)
+	}
+	n, err := strconv.Atoi(r.PathValue("n"))
+	if err != nil {
+		return nil, fmt.Errorf("note %d file %q: %w", seq, r.PathValue("n"), store.ErrNotFound)
+	}
+	return s.st.NoteFileBlob(ctx, seq, n)
+}
+
+// handleNoteBlob serves a note's file at its stable address: the
+// note's current bytes for that file number, so a link a person keeps
+// shows the page after a replace. A page opens under the page policy,
+// as on the hash route; the ETag is the current ref's, so a cache
+// re-reads after a replace (serveBlob).
+func (s *Server) handleNoteBlob(w http.ResponseWriter, r *http.Request) {
+	ref, err := s.noteFile(r.Context(), r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if ref.IsPage() {
+		w.Header().Set("Content-Security-Policy", pagePolicy)
+	}
+	serveBlob(w, r, s.home, ref.Hash, ref)
+}
+
+// handlePagesNoteBlob serves a note's file at its stable address on
+// the sandbox origin, as handlePagesBlob serves the hash route: the
+// same bytes under the scripted policy PagesHandler set.
+func (s *Server) handlePagesNoteBlob(w http.ResponseWriter, r *http.Request) {
+	ref, err := s.noteFile(r.Context(), r)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "no such blob", http.StatusNotFound)
+			return
+		}
+		if r.Context().Err() == nil {
+			s.log.Error("pages: "+r.URL.Path, "err", err)
+		}
+		http.Error(w, "could not read the blob", http.StatusInternalServerError)
+		return
+	}
+	serveBlob(w, r, s.home, ref.Hash, ref)
+}
+
 // serveBlob serves a note's blob ref, held under hash: its bytes with
 // their type. An image and a page are served as ever, inline. A file is
 // served as a download, never inline, by kind and not by type: an SVG, a
@@ -622,6 +634,14 @@ func blobURL(hash, name string) string {
 		return "/blobs/" + hash
 	}
 	return "/blobs/" + hash + "/" + url.PathEscape(name)
+}
+
+// blobNoteURL is the stable path of a note's file number n: the note's
+// current bytes for that file, after a replace as before it. A page's
+// link text still names the current hash, so the address alone is
+// what a reader keeps.
+func blobNoteURL(seq uint64, n int) string {
+	return "/blobs/note/" + strconv.FormatUint(seq, 10) + "/" + strconv.Itoa(n)
 }
 
 // markAuthor is who a name reads as on the page, a note's author or a

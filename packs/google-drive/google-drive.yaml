@@ -48,7 +48,12 @@ credential:
   mint:
     - name: GOOGLE_ACCOUNT
       secret: false               # an address, asked in the clear
+      bound: true                 # one holder: the yard or one user, never both
   mint_command: [google-mint]       # the file beside this one; the source's own mint_command wins
+  mint_scopes: [https://www.googleapis.com/auth/drive.file]  # the scopes the hosted mint must see granted before it holds a token
+  login:
+    run: [gws auth login -s drive, gws auth export --unmasked]
+    paste: paste the whole output of gws auth export --unmasked into the Google sign-in card for this account, and give no other card the export
 check: files
 calls:
   files:
@@ -157,3 +162,7 @@ calls:
       path: /drive/v3/files/{fileId}/comments/{commentId}/replies
       body: { content: "{content}", action: "{action}" }   # an action left out leaves the key, so the reply only answers
     answer: { select: [id, content, action] }   # the reply it made; action only when it resolved
+
+# The mint runs gws on this machine; GWS_BIN may name another copy.
+needs:
+  - { program: gws, env: GWS_BIN, install: [install-gws] }

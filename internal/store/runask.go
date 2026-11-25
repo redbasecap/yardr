@@ -113,11 +113,12 @@ type AskRun struct {
 	// Ask are the names the approval gives values for in the clear, one
 	// field on the card each, kept as Carried is. No other row keeps it.
 	Ask []string `json:"ask,omitempty"`
-	// Test is the test command a depot test row carries beside argv, in
-	// the ask's --run-test. No other row keeps it.
+	// Test is the test command a depot test or depot add row carries
+	// beside argv, in the ask's --run-test. No other row keeps it.
 	Test string `json:"test,omitempty"`
 	// Flow is the whole flow a flow set row carries beside argv, in the
-	// ask's --run-flow, as the line format writes it. No other row keeps it.
+	// ask's --run-flow, as the line format writes it, or the text of the
+	// stage file a flow set-stage row carries there. No other row keeps it.
 	Flow string `json:"flow,omitempty"`
 	// Role is the prompt text a crew add, group add, group set or crew set
 	// row carries beside argv (the ask's --run-role, or the file prompt=
@@ -125,8 +126,7 @@ type AskRun struct {
 	// the yard names by its digest (runask_promptfile.go). No other row
 	// keeps it.
 	Role string `json:"role,omitempty"`
-	// HookTable is the says and makes lines a hook add row carries
-	// beside argv, in the order given: a line needs spaces, -> and
+	// HookTable is the says and makes lines a hook add row carries beside argv, in the order given: a line needs spaces, -> and
 	// free-text notes, none of which a --run word holds, so they go
 	// beside it as a depot test's command does (--run-says and
 	// --run-makes, S: and M: on stdin). The card shows them whole
@@ -134,6 +134,11 @@ type AskRun struct {
 	// these lines. No other row keeps it: askedRun throws a writer's
 	// HookTable away with its Does and Seen.
 	HookTable *AskHookTable `json:"hook_table,omitempty"`
+	// Plan is what the command changes, field by field, for a row of the
+	// set-a-field engine (runask_plan.go): written by the row from the
+	// yard's records, never taken from the writer. Nil on every other
+	// row; an old build ignores it.
+	Plan *RunPlan `json:"plan,omitempty"`
 }
 
 // What an ask proposes and what its approval did, as commands and
@@ -185,6 +190,9 @@ type runCommand struct {
 	checkRun func(ctx context.Context, w *wtx, run AskRun, actor string) error
 	cardRun  func(w *wtx, run AskRun, asking bool) (AskRun, error)
 	runRun   func(ctx context.Context, w *wtx, run AskRun, actor string, by *approvedOn) (string, error)
+	// plan is the card of a row of the set-a-field engine, drawn for a dry
+	// run (PlanRun) without the asker's check; nil on every other row.
+	plan func(w *wtx, run AskRun) (AskRun, error)
 	// whose is the user whose own the command is, where the store function
 	// takes it from that user as it does from the operator: the ask is then
 	// for one of the two, and the one asked approves. nil for a command
@@ -223,11 +231,8 @@ type runCommand struct {
 // runList are the commands a run ask may name: every operator-only,
 // file-free command that is one write of the store. Whether each is the
 // operator's, and whether a run ask may propose it, is the command's own
-// check (runCommand.check), which refuses with the same words and the
-// same mark the store function refuses with: the list never says whose
-// a command is twice. What is the operator's alone is refused past the
-// list (aloneList). A test holds each row to the command of internal/cli
-// it names.
+// check (runCommand.check): the list never says whose a command is twice.
+// What is the operator's alone is refused past the list (aloneList).
 var runList = []runCommand{{
 	words:       []string{"peer", "add"},
 	use:         "yardr peer add <name> <invite>",
@@ -286,7 +291,7 @@ var runList = []runCommand{{
 }, {
 	words:       []string{"source", "set"},
 	use:         "yardr source set <source> calls_per_hour=<n>|updates_per_hour=<n>",
-	description: "Change a source's credential, per-hour call limits or region base",
+	description: sourceSetDescription,
 	parse:       parseSourceLimit,
 	check:       checkSourceLimit,
 	card:        (*wtx).sourceLimitCard,
@@ -324,15 +329,6 @@ var runList = []runCommand{{
 	stale:       (*wtx).sourceAddStale,
 	weigh:       sourceAddWeight,
 	runRun:      runSourceAdd,
-}, {
-	words:       []string{"source", "ignore"},
-	use:         "yardr source ignore <source> --rm <id>",
-	description: "List a source's ignored senders, or stop ignoring one",
-	parse:       parseSourceIgnore,
-	check:       checkSourceIgnore,
-	card:        (*wtx).sourceIgnoreCard,
-	stale:       (*wtx).sourceIgnoreStale,
-	run:         runSourceIgnore,
 }, {
 	words:       []string{"source", "check"},
 	use:         "yardr source check <source> --user <user>",
@@ -407,15 +403,6 @@ var runList = []runCommand{{
 	weigh:       userAddWeight,
 	run:         runUserAdd,
 }, {
-	words:       []string{"user", "rm"},
-	use:         "yardr user rm <name>",
-	description: "Remove a user (the mail stays in the log)",
-	parse:       parseUserRm,
-	check:       checkUserRm,
-	card:        (*wtx).userRmCard,
-	stale:       (*wtx).userRmStale,
-	run:         runUserRm,
-}, {
 	words:       []string{"user", "invite"},
 	use:         "yardr user invite <name> --email <address> [--role operator] [--crew-talk yes|no]",
 	description: "Invite a teammate by email",
@@ -475,15 +462,6 @@ var runList = []runCommand{{
 	link:        crewGrantLink,
 	commas:      true,
 }, {
-	words:       []string{"crew", "identity"},
-	use:         "yardr crew identity <name> --source <source> [--id <id>] [--key <key>]",
-	description: "Who a crew member is in a source (no --source: list)",
-	parse:       parseCrewIdentity,
-	check:       checkCrewIdentity,
-	card:        (*wtx).crewIdentityCard,
-	stale:       (*wtx).crewIdentityStale,
-	run:         runCrewIdentity,
-}, {
 	words:       []string{"user", "identity"},
 	use:         "yardr user identity <user> --source <source> [--id <id>] [--key <key>]",
 	description: "Who a user is in a source (no --source: list)",
@@ -504,6 +482,9 @@ var runList = []runCommand{{
 	stale:       (*wtx).settingSetStale,
 	weigh:       settingSetWeight,
 	run:         runSettingSet,
+	// A value of several words is joined with single spaces (runs of
+	// spaces collapse to one); the comma holds for description lists.
+	commas: true,
 }, {
 	words:       []string{"peer", "rename"},
 	use:         "yardr peer rename <old> <new>",
@@ -515,29 +496,6 @@ var runList = []runCommand{{
 	run:         runPeerRename,
 	link:        func(argv []string) ([]string, string) { return []string{argv[2]}, "rename its own link" },
 }, {
-	words:       []string{"bead", "update"},
-	use:         "yardr bead update <bead> --originator <user>",
-	description: "Change a bead's fields (use advance to change stage)",
-	parse:       parseOriginator,
-	check:       checkOriginator,
-	card:        (*wtx).originatorCard,
-	stale:       (*wtx).originatorStale,
-	run: func(ctx context.Context, w *wtx, argv []string, actor string, by *approvedOn) (string, error) {
-		if err := w.setOriginator(ctx, argv[2], argv[4], Expect{}, actor, by); err != nil {
-			return "", err
-		}
-		return "originator: " + argv[4], nil
-	},
-}, {
-	words:       []string{"timer", "rm"},
-	use:         "yardr timer rm <id>",
-	description: "Remove a timer: one you set or that tells you, or as the operator any",
-	parse:       parseTimerRm,
-	check:       checkTimerRm,
-	card:        (*wtx).timerRmCard,
-	stale:       (*wtx).timerRmStale,
-	run:         runTimerRm,
-}, {
 	words:       []string{"up"},
 	use:         "yardr up",
 	description: "Start everything the yard needs that is not running",
@@ -546,15 +504,6 @@ var runList = []runCommand{{
 	card:        (*wtx).upCard,
 	stale:       (*wtx).upStale,
 	run:         runUp,
-}, {
-	words:       []string{"crew", "restart"},
-	use:         "yardr crew restart <name> [--for <user>]",
-	description: "Start a fresh session once the current one is idle",
-	parse:       parseCrewRestart,
-	check:       checkCrewRestart,
-	card:        (*wtx).crewRestartCard,
-	stale:       (*wtx).crewRestartStale,
-	run:         runCrewRestart,
 }, {
 	words:       []string{"depot", "test"},
 	use:         "yardr depot test <depot>",
@@ -565,15 +514,6 @@ var runList = []runCommand{{
 	stale:       (*wtx).depotTestStale,
 	weigh:       depotTestWeight,
 	runRun:      runDepotTest,
-}, {
-	words:       []string{"depot", "base"},
-	use:         "yardr depot base <depot> <base>",
-	description: "Change a depot's base",
-	parse:       parseDepotBase,
-	check:       checkDepotBase,
-	card:        (*wtx).depotBaseCard,
-	stale:       (*wtx).depotBaseStale,
-	run:         runDepotBase,
 }}
 
 // askedRun checks the command a run ask for the user to proposes, written
@@ -763,10 +703,13 @@ func (s *Store) ApproveAsk(ctx context.Context, id string, ask uint64, actor str
 		defer s.askLocks.lock(hookLockKey(name))()
 		return s.approveHookRegister(ctx, id, ask, actor, weighed, values)
 	}
-	if s.sourceCheckTarget(id, ask) || s.sourceCallTarget(id, ask) {
+	if s.sourceCheckTarget(id, ask) || s.sourceCallTarget(id, ask) || s.packInstallTarget(id, ask) {
 		defer s.askLocks.lock(askLockKey(id, ask))()
 		if s.sourceCallTarget(id, ask) {
 			return s.approveSourceCall(ctx, id, ask, actor, weighed)
+		}
+		if s.packInstallTarget(id, ask) {
+			return s.approvePackInstall(ctx, id, ask, actor, weighed)
 		}
 		return s.approveSourceCheck(ctx, id, ask, actor, weighed)
 	}
@@ -786,57 +729,9 @@ func (s *Store) ApproveAsk(ctx context.Context, id string, ask uint64, actor str
 		return err
 	})
 	if err != nil {
-		return nil, err
+		return nil, s.askedAgain(ctx, id, ask, actor, err)
 	}
 	return out, nil
-}
-
-// prewriteRun reads before the write what the row's card needs outside
-// one (runCommand.ready and runCommand.fetch): the flows and the call's
-// context carrying the fetched reading. A nil row reads none.
-func prewriteRun(ctx context.Context, s *Store, run AskRun, c *runCommand, argv []string) (map[string]*RepoFlows, context.Context, error) {
-	if c == nil {
-		return nil, ctx, nil
-	}
-	var repos map[string]*RepoFlows
-	if c.ready != nil {
-		var err error
-		if repos, err = c.ready(ctx, s, run, argv); err != nil {
-			return nil, ctx, err
-		}
-	}
-	if c.fetch != nil {
-		read, err := c.fetch(ctx, s, argv)
-		if err != nil {
-			return nil, ctx, err
-		}
-		ctx = context.WithValue(ctx, urlPackKey{}, read)
-	}
-	return repos, ctx, nil
-}
-
-// approvalRepos reads, before the write that approves the run ask seq on
-// the bead id, what its row's card needs of git or of the packs
-// repository (prewriteRun). An ask that cannot be read here (no bead, no
-// run) is left to the write, which refuses it in its own words.
-func (s *Store) approvalRepos(ctx context.Context, id string, seq uint64) (map[string]*RepoFlows, context.Context, error) {
-	notes, err := s.Notes(ctx, id)
-	if err != nil {
-		return nil, ctx, nil
-	}
-	for _, n := range notes {
-		if n.Seq != seq || n.Kind != NoteAsk {
-			continue
-		}
-		ask, err := ParseAsk(n)
-		if err != nil || ask.Run == nil {
-			return nil, ctx, nil
-		}
-		if c, argv, err := parseRow(ask.Run.Argv); err == nil {
-			return prewriteRun(ctx, s, *ask.Run, c, argv)
-		}
-	}
-	return nil, ctx, nil
 }
 
 // approveAsk is ApproveAsk inside the transaction. A batch may run it twice
@@ -940,7 +835,7 @@ func (w *wtx) approveAsk(ctx context.Context, id string, seq uint64, actor strin
 	if err != nil {
 		return nil, fmt.Errorf("ask %d: %w. %s", seq, err, nothingRan)
 	}
-	if was.General != nil || !sameMap(card.Seen, was.Seen) || !slices.Equal(card.Does, was.Does) || card.Back != was.Back || card.BackBy != was.BackBy {
+	if was.General != nil || !sameMap(card.Seen, was.Seen) || !slices.Equal(card.Does, was.Does) || card.Back != was.Back || card.BackBy != was.BackBy || !samePlan(card.Plan, was.Plan) {
 		if err := c.stale(w, seq, was, card); err != nil {
 			return nil, err
 		}
@@ -961,6 +856,7 @@ func (w *wtx) approveAsk(ctx context.Context, id string, seq uint64, actor strin
 	if err := w.gateRefusal(seq, weight, r.Ask.Weight, actor, weighed); err != nil {
 		return nil, err
 	}
+	w.approving = &approvingAsk{bead: row.UUID, seq: seq} // its own run tells it nothing: this write answers it
 	var result string
 	if c.runRun != nil {
 		result, err = c.runRun(ctx, w, was, actor, &approvedOn{Bead: row.ID, Ask: seq})

@@ -115,7 +115,7 @@ groups:
   people:   { people: true }
 crew:
   yardmaster:
-    role: roles/yardmaster.md
+    # No role: a pack sets no yardmaster prompt.
     hears:
       events: [held]
       stages: [decide]
@@ -188,7 +188,7 @@ func TestStarterPackLoads(t *testing.T) {
 			t.Errorf("group %s env = %v, want %v", g.Name, g.Env, want)
 		}
 	}
-	if want := []string{"roles/builder.md", "roles/review-security.md", "roles/reviewer.md", "roles/yardmaster.md", "scripts/merge-local"}; !reflect.DeepEqual(p.Files(), want) {
+	if want := []string{"roles/builder.md", "roles/review-security.md", "roles/reviewer.md", "scripts/merge-local"}; !reflect.DeepEqual(p.Files(), want) {
 		t.Fatalf("files = %v, want %v", p.Files(), want)
 	}
 	// Every stage a bead is worked in has its stage file.
@@ -202,7 +202,7 @@ func TestStarterPackLoads(t *testing.T) {
 		}
 	}
 	m := p.Crew[0]
-	if m.Name != "yardmaster" || m.Role != "roles/yardmaster.md" || !m.Done || !reflect.DeepEqual(m.Stages, []string{"decide", "clear"}) ||
+	if m.Name != "yardmaster" || m.Role != "" || !m.Done || !reflect.DeepEqual(m.Stages, []string{"decide", "clear"}) ||
 		!reflect.DeepEqual(m.Subscribe, []pack.Source{{Name: "linear", Scope: "involved"}}) || !reflect.DeepEqual(m.Events, []string{store.KindAttention}) {
 		t.Fatalf("yardmaster = %+v", m)
 	}
@@ -509,7 +509,7 @@ func TestStrictness(t *testing.T) {
 		{name: "unknown top-level key", old: "groups:", new: "model: opus\ngroups:", key: "model", msg: "unknown key", line: 9},
 		{name: "unknown stage key", old: "merged: { end: true }", new: "merged: { end: true, colour: red }", key: "flows.default.stages.merged.colour", msg: "unknown key", line: 8},
 		{name: "unknown group key", old: "limit: 2", new: "limit: 2, model: opus", key: "groups.builders.model", msg: "unknown key", line: 10},
-		{name: "unknown crew member key", old: "    role: roles/yardmaster.md", new: "    role: roles/yardmaster.md\n    identity: x", key: "crew.yardmaster.identity", msg: "unknown key", line: 16},
+		{name: "unknown crew member key", old: "    hears:", new: "    identity: x\n    hears:", key: "crew.yardmaster.identity", msg: "unknown key", line: 16},
 		// The sketch's own mistake: "on" for outcomes and for what a
 		// crew member hears.
 		{name: "boolean key on", old: "outcomes: { done: merged }", new: "on: { done: merged }", key: "flows.default.stages.review.on", msg: "reads the bare key on as a boolean", line: 6},
@@ -556,7 +556,10 @@ func TestStrictness(t *testing.T) {
 		{name: "env value holds a line break", old: "run: scripts/land", new: `run: scripts/land, env: { A: "x\ny" }`, key: "groups.assembly.env.A", msg: "U+000A, which is not printable", line: 11},
 		{name: "env value holds an escape", old: "run: scripts/land", new: `run: scripts/land, env: { A: "x\e[2Ky" }`, key: "groups.assembly.env.A", msg: "U+001B, which is not printable", line: 11},
 		{name: "missing role", files: map[string]string{"roles/builder.md": ""}, key: "groups.builders.agent", msg: "role roles/builder.md is missing", line: 10},
-		{name: "missing crew member role", files: map[string]string{"roles/yardmaster.md": ""}, key: "crew.yardmaster.role", msg: "role roles/yardmaster.md is missing", line: 15},
+		{name: "missing crew member role", old: "  yardmaster:\n", new: "  yardmaster:\n    role: roles/yardmaster.md\n", files: map[string]string{"roles/yardmaster.md": ""}, key: "crew.yardmaster.role", msg: "role roles/yardmaster.md is missing", line: 15},
+		{name: "missing section", old: "  yardmaster:\n", new: "  yardmaster:\n    section: sections/yardmaster.md\n", key: "crew.yardmaster.section", msg: "section sections/yardmaster.md is missing", line: 15},
+		{name: "section is absolute", old: "  yardmaster:\n", new: "  yardmaster:\n    section: /etc/passwd\n", key: "crew.yardmaster.section", msg: "relative to its directory, not absolute", line: 15},
+		{name: "section leaves the pack", old: "  yardmaster:\n", new: "  yardmaster:\n    section: ../yardmaster.md\n", key: "crew.yardmaster.section", msg: "leaves the pack's directory", line: 15},
 		{name: "missing script", files: map[string]string{"scripts/land": ""}, key: "groups.assembly.run", msg: "script scripts/land is missing", line: 11},
 		{name: "absolute path", old: "agent: roles/builder.md", new: "agent: /etc/passwd", key: "groups.builders.agent", msg: "relative to its directory, not absolute", line: 10},
 		{name: "path leaving the pack", old: "agent: roles/builder.md", new: "agent: roles/../../builder.md", key: "groups.builders.agent", msg: "leaves the pack's directory", line: 10},
@@ -566,8 +569,8 @@ func TestStrictness(t *testing.T) {
 		{name: "stage file of an end stage", old: "merged: { end: true }", new: "merged: { end: true, file: roles/yardmaster.md }", key: "flows.default.stages.merged", msg: "so it has no file", line: 8},
 		{name: "stage no flow has", old: "stages: [decide]", new: "stages: [triage]", key: "crew.yardmaster.hears.stages", msg: "no flow of this pack has a stage triage", line: 18},
 		{name: "unknown scope", old: "linear: involved", new: "linear: everything", key: "crew.yardmaster.subscribe.linear", msg: "one of involved, mentions, all", line: 21},
-		{name: "a source no thread can be opened in", old: "    role: roles/yardmaster.md", new: "    role: roles/yardmaster.md\n    open_threads: [github, token]", key: "crew.yardmaster.open_threads", msg: "yardr cannot open threads in token (it can in none of the yard's sources)", line: 16},
-		{name: "open_threads is a list", old: "    role: roles/yardmaster.md", new: "    role: roles/yardmaster.md\n    open_threads: linear", key: "crew.yardmaster.open_threads", msg: "want a list", line: 16},
+		{name: "a source no thread can be opened in", old: "  yardmaster:\n", new: "  yardmaster:\n    open_threads: [github, token]\n", key: "crew.yardmaster.open_threads", msg: "yardr cannot open threads in token (it can in none of the yard's sources)", line: 15},
+		{name: "open_threads is a list", old: "  yardmaster:\n", new: "  yardmaster:\n    open_threads: linear\n", key: "crew.yardmaster.open_threads", msg: "want a list", line: 15},
 		{name: "key given twice", old: "groups:\n", new: "groups:\n  people: { people: true }\n", key: "groups.people", msg: "given twice", line: 13},
 		{name: "no name", old: "name: small\n", new: "", key: "name", msg: "missing", line: 1},
 		{name: "kind of no depot", old: "name: small\n", new: "name: small\nkind: svn\n", key: "kind", msg: `kind "svn": a pack is for a depot of kind git or dir`, line: 2},
@@ -576,11 +579,11 @@ func TestStrictness(t *testing.T) {
 		// this yardr reads is the pack's one mistake, wherever the key
 		// stands and whatever else is wrong with the pack: the rest would
 		// be this yardr's mistakes, not the pack's.
-		{name: "api above what this yardr reads", old: "name: small\n", new: "name: small\napi: 8\n", key: "api", msg: "this pack is written for pack API 8, and this yardr reads up to 7: upgrade yardr (yardr upgrade)", line: 2},
-		{name: "api far above", old: "name: small\n", new: "name: small\napi: 1000\n", key: "api", msg: "this pack is written for pack API 1000, and this yardr reads up to 7", line: 2},
-		{name: "api above, beside a key this yardr lacks", old: "name: small\n", new: "name: small\napi: 8\nmodel: opus\n", key: "api", msg: "upgrade yardr", line: 2},
-		{name: "api above, beside a file that is missing", old: "name: small\n", new: "name: small\napi: 8\n", files: map[string]string{"roles/builder.md": ""}, key: "api", msg: "upgrade yardr", line: 2},
-		{name: "api above, last in the file and beside a scope that is wrong", old: "      linear: involved\n", new: "      linear: everything\napi: 8\n", key: "api", msg: "this pack is written for pack API 8", line: 22},
+		{name: "api above what this yardr reads", old: "name: small\n", new: "name: small\napi: 9\n", key: "api", msg: "this pack is written for pack API 9, and this yardr reads up to 8: upgrade yardr (yardr upgrade)", line: 2},
+		{name: "api far above", old: "name: small\n", new: "name: small\napi: 1000\n", key: "api", msg: "this pack is written for pack API 1000, and this yardr reads up to 8", line: 2},
+		{name: "api above, beside a key this yardr lacks", old: "name: small\n", new: "name: small\napi: 9\nmodel: opus\n", key: "api", msg: "upgrade yardr", line: 2},
+		{name: "api above, beside a file that is missing", old: "name: small\n", new: "name: small\napi: 9\n", files: map[string]string{"roles/builder.md": ""}, key: "api", msg: "upgrade yardr", line: 2},
+		{name: "api above, last in the file and beside a scope that is wrong", old: "      linear: involved\n", new: "      linear: everything\napi: 9\n", key: "api", msg: "this pack is written for pack API 9", line: 22},
 		{name: "api of none", old: "name: small\n", new: "name: small\napi: 0\n", key: "api", msg: "want a whole number, 1 or more (the pack API this pack is written for, docs/pack-api.md), got int 0", line: 2},
 		{name: "api below zero", old: "name: small\n", new: "name: small\napi: -1\n", key: "api", msg: "got int -1", line: 2},
 		{name: "api is a string", old: "name: small\n", new: "name: small\napi: \"1\"\n", key: "api", msg: `got "1"`, line: 2},
@@ -599,7 +602,7 @@ func TestStrictness(t *testing.T) {
 		{name: "frame is over 256 KiB", old: "name: small\n", new: framed("frames/page.html"), files: map[string]string{"frames/page.html": strings.Repeat("x", 256<<10+1)}, key: "frame", msg: "frame frames/page.html holds 262145 bytes: at most 262144", line: 3},
 		{name: "frame is a group's role", old: "name: small\n", new: framed("roles/builder.md"), files: map[string]string{"roles/builder.md": pageFrame}, key: "frame", msg: "frame roles/builder.md is also the role of group builders", line: 3},
 		{name: "frame is a group's script", old: "name: small\n", new: framed("scripts/land"), files: map[string]string{"scripts/land": pageFrame}, key: "frame", msg: "frame scripts/land is also the script of group assembly", line: 3},
-		{name: "frame is a crew member's role", old: "name: small\n", new: framed("roles/yardmaster.md"), files: map[string]string{"roles/yardmaster.md": pageFrame}, key: "frame", msg: "frame roles/yardmaster.md is also the role of crew member yardmaster", line: 3},
+		{name: "frame is a crew member's role", old: "name: small\n", new: framed("roles/yardmaster.md"), also: []string{"  yardmaster:\n", "  yardmaster:\n    role: roles/yardmaster.md\n"}, files: map[string]string{"roles/yardmaster.md": pageFrame}, key: "frame", msg: "frame roles/yardmaster.md is also the role of crew member yardmaster", line: 3},
 		{name: "frame is a stage file", old: "name: small\n", new: framed("frames/page.html"), also: []string{"review: { group: assembly,", "review: { group: assembly, file: frames/page.html,"}, files: map[string]string{"frames/page.html": pageFrame}, key: "frame", msg: "frame frames/page.html is also the stage file of stage review of flow default", line: 3},
 		{name: "frame is the setup notes", old: "name: small\n", new: "name: small\napi: 4\nsetup: frames/page.html\nframe: frames/page.html\n", files: map[string]string{"frames/page.html": pageFrame}, key: "frame", msg: "frame frames/page.html is also the setup notes", line: 4},
 		// author and id (API 5): the pack's own words, held to their form
@@ -736,8 +739,8 @@ func TestKindIsTheDepotKindThePackIsFor(t *testing.T) {
 // A pack says which pack API it is written for, or says nothing and is
 // written for API 1, as every pack was before the key.
 func TestAPIIsTheNumberThePackSaysItIsWrittenFor(t *testing.T) {
-	if pack.API != 7 {
-		t.Fatalf("pack.API = %d: this test knows APIs 1 to 7, and so does the page's list of what each number added", pack.API)
+	if pack.API != 8 {
+		t.Fatalf("pack.API = %d: this test knows APIs 1 to 8, and so does the page's list of what each number added", pack.API)
 	}
 	for name, tc := range map[string]struct {
 		text string
@@ -751,6 +754,7 @@ func TestAPIIsTheNumberThePackSaysItIsWrittenFor(t *testing.T) {
 		"api 5":                {text: strings.Replace(small, "name: small\n", "name: small\napi: 5\n", 1), api: 5},
 		"api 6":                {text: strings.Replace(small, "name: small\n", "name: small\napi: 6\n", 1), api: 6},
 		"api 7":                {text: strings.Replace(small, "name: small\n", "name: small\napi: 7\n", 1), api: 7},
+		"api 8":                {text: strings.Replace(small, "name: small\n", "name: small\napi: 8\n", 1), api: 8},
 		"api last in the file": {text: small + "api: 1\n", api: 1},
 	} {
 		if p, err := pack.LoadDir(writePack(t, smallFiles(tc.text))); err != nil || p.API != tc.api {
@@ -1014,7 +1018,7 @@ func TestBuilderRoleNamesTheShotTimeout(t *testing.T) {
 	}
 }
 
-// yardmasterCeiling is the most bytes a pack's roles/yardmaster.md may hold.
+// yardmasterCeiling is the most bytes the yardmaster base may hold.
 // Every session of the yardmaster reads the role whole before it does
 // anything, so it is a core, and what a case needs beyond it is read from the
 // docs it points at (design yardr-2vy0 3.1, 3.5).
@@ -1029,11 +1033,14 @@ func overYardmasterCeiling(role []byte) error {
 	return nil
 }
 
-// Every pack that ships a yardmaster role holds it to the ceiling, which is a
-// hard one (design yardr-2vy0 5.2): adding reference back to a role has to
-// argue for room, or a core grows back to the 31 KB the three were cut from.
-// Each role is read through packs.FS, as an import installs it, and held on its
-// own: the three texts are independent (3.3), so none is compared with another.
+// No pack ships a yardmaster role: the base yardr carries
+// (yardmaster_base.md, the starter's text moved into the binary) is the one
+// yardmaster text, held to the ceiling which is a hard one (design
+// yardr-2vy0 5.2): adding reference back to it has to argue for room, or a
+// core grows back to the 31 KB the three were cut from. What a pack asks of
+// its yardmaster travels in its section instead, held at the plan to
+// maxSection. The base is what a new yard's yardmaster reads whole, so it
+// is a core like any of them.
 // Only the total is held; the design's per-section budgets (3.1) guide a cut and
 // are not tested.
 func TestYardmasterRolesFitTheirCeiling(t *testing.T) {
@@ -1050,30 +1057,19 @@ func TestYardmasterRolesFitTheirCeiling(t *testing.T) {
 			t.Errorf("%s: overYardmasterCeiling = %v, fits want %v", c.name, err, c.fits)
 		}
 	}
-	// A pack that ships the role joins by a row. One with none would escape
-	// the ceiling unseen, so the rows are the packs that ship it.
-	rows := []string{packs.Starter, packs.Website, packs.Contributors}
-	var held []string
-	for _, name := range rows {
-		held = append(held, name+"/roles/yardmaster.md")
+	// The base is yardr's own, not a pack's: it is held here, on its own.
+	if err := overYardmasterCeiling(pack.YardmasterBase()); err != nil {
+		t.Errorf("the yardmaster base is %v", err)
 	}
+	// No shipped role is left to hold: a pack shipping one again would
+	// set a yardmaster prompt an import now refuses, and escape the
+	// ceiling unseen.
 	shipped, err := fs.Glob(packs.FS, "*/roles/yardmaster.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	slices.Sort(held)
-	slices.Sort(shipped)
-	if !slices.Equal(shipped, held) {
-		t.Fatalf("packs shipping roles/yardmaster.md = %v, but the table holds %v: add a row for the pack, so that its role is held to the ceiling", shipped, held)
-	}
-	for _, name := range rows {
-		role, err := fs.ReadFile(packs.FS, name+"/roles/yardmaster.md")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := overYardmasterCeiling(role); err != nil {
-			t.Errorf("packs/%s/roles/yardmaster.md is %v", name, err)
-		}
+	if len(shipped) != 0 {
+		t.Fatalf("packs shipping roles/yardmaster.md = %v, want none: a pack's yardmaster words go in its section (sections/yardmaster.md)", shipped)
 	}
 }
 

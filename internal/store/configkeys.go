@@ -80,6 +80,7 @@ var ConfigKeys = []ConfigKey{
 	{"nice", ConfigNice, []string{"exec", "herdr"}, GroupConfig, "the niceness a session and everything it starts run at, so that the daemon is served first when the machine is full; unset: the one it would start with"},
 	{"kind", ConfigString, []string{"herdr"}, "", "the agent kind herdr starts; default: the yard's default_kind"},
 	{"model", ConfigString, []string{"herdr"}, "", "the agent's model; default: the harness's own"},
+	{"fallback_model", ConfigString, []string{"herdr"}, CrewConfig, "the model of the same kind its sessions restart on when the model's own usage window is used up; unset: they wait for the reset"},
 	{"effort", ConfigString, []string{"herdr"}, GroupConfig, "the agent's reasoning effort, a level of its kind (yardr harness show <kind> lists them); default: the harness's own"},
 	{"provider", ConfigString, []string{"herdr"}, "", "the subscription the agent burns, named as a source's limits kinds name it; default: the kind's mapping"},
 	{"args", ConfigWords, []string{"herdr"}, "", "arguments the agent is started with"},
@@ -94,6 +95,7 @@ var ConfigKeys = []ConfigKey{
 	{"label", ConfigString, []string{"herdr"}, GroupConfig, "the label of the herdr workspace the group's sessions open in"},
 	{"greet", ConfigString, []string{"herdr"}, CrewConfig, "the user the crew member's first session greets"},
 	{"notify", ConfigSwitch, []string{"manual"}, GroupConfig, "true: a herdr notification says a bead is waiting"},
+	{"ask_crew_first", ConfigSwitch, []string{"manual"}, GroupConfig, "true: a stage's ask goes to the group's first crew member first, and to its people only when that member passes it up or stays silent past the group's wait"},
 	{"wait", ConfigSpan, []string{"manual"}, GroupConfig, "how long a bead may be in a stage of the group before a waited event, once per stay; unset: never"},
 	{"fold", ConfigCount, []string{"manual"}, GroupConfig, fmt.Sprintf("makes the group a siding: the beads waiting in a stage of the group are folded into one bead when this many wait; default %d", SidingFold)},
 	{"fold_after", ConfigSpan, []string{"manual"}, GroupConfig, fmt.Sprintf("makes the group a siding: the beads waiting are folded when the latest has waited this long; default %s", Span(SidingAfter))},
@@ -204,6 +206,10 @@ func configProblems(of ConfigOf, name, runner string, cfg, old map[string]any) [
 	}
 	if runner == "herdr" && of == GroupConfig {
 		typed = append(typed, effortProblems(subject, cfg, old)...)
+		typed = append(typed, modelProblems(subject, cfg, old)...)
+	}
+	if runner == "herdr" && of == CrewConfig {
+		typed = append(typed, fallbackProblems(subject, cfg, old)...)
 	}
 	out := append(typed, unknown...)
 	if cmd, _ := cfg["cmd"].(string); runner == "exec" && of == GroupConfig && cmd == "" && len(typed) == 0 {

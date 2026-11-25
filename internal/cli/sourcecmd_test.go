@@ -253,6 +253,50 @@ hear:
 	if out, err = run(t, a.sourceCmd(), "set", "pushover", "host="); err != nil || !strings.Contains(out, "source pushover: calls go to https://api.pushover.net/1\n") {
 		t.Fatalf("clear host: %q %v", out, err)
 	}
+	// A declaration that names a path template lets the operator type the
+	// site its calls are scoped to: its calls go to the filled segment, the
+	// three settings replace each other, and one that no longer names a
+	// path template sends the calls to its base again.
+	sited := strings.Replace(string(decl), "base: https://api.pushover.net/1\n", "base: https://api.pushover.net/1\npath_template: https://api.pushover.net/ex/{site}/1\n", 1)
+	if sited == string(decl) {
+		t.Fatal("the test adds no path template")
+	}
+	siteFile := filepath.Join(t.TempDir(), "pushover.yaml")
+	if err := os.WriteFile(siteFile, []byte(sited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run(t, a.sourceCmd(), "add", siteFile); err != nil {
+		t.Fatal(err)
+	}
+	if out, err = run(t, a.sourceCmd(), "show", "pushover"); err != nil ||
+		!strings.Contains(out, "site: none set; yardr source set pushover site=<site> sends the calls to https://api.pushover.net/ex/<site>/1 for a site of your own") {
+		t.Fatalf("show with a path template and no site: %q %v", out, err)
+	}
+	if out, err = run(t, a.sourceCmd(), "set", "pushover", "site=cloud-1/extra"); err == nil || !strings.Contains(err.Error(), "a site is one path segment") {
+		t.Fatalf("set site=cloud-1/extra: %q %v", out, err)
+	}
+	out, err = run(t, a.sourceCmd(), "set", "pushover", "site=cloud-1")
+	if err != nil || !strings.Contains(out, "source pushover: calls go to https://api.pushover.net/ex/cloud-1/1 (site cloud-1)") {
+		t.Fatalf("set site: %q %v", out, err)
+	}
+	out, err = run(t, a.sourceCmd(), "show", "pushover")
+	if err != nil || !strings.Contains(out, "pushover  https://api.pushover.net/ex/cloud-1/1 (site cloud-1)") ||
+		!strings.Contains(out, "site: cloud-1, which fills https://api.pushover.net/ex/<site>/1") {
+		t.Fatalf("show with a site: %q %v", out, err)
+	}
+	if out, err = run(t, a.sourceCmd(), "list"); err != nil || !strings.Contains(out, "https://api.pushover.net/ex/cloud-1/1 (site cloud-1)") {
+		t.Fatalf("list with a site: %q %v", out, err)
+	}
+	if _, err := st.PutSource(context.Background(), "pushover.yaml", string(decl), "jo"); err != nil {
+		t.Fatal(err)
+	}
+	out, err = run(t, a.sourceCmd(), "show", "pushover")
+	if err != nil || !strings.Contains(out, "pushover  https://api.pushover.net/1\n") || strings.Contains(out, "(site") {
+		t.Fatalf("show after the declaration drops its path template: %q %v", out, err)
+	}
+	if out, err = run(t, a.sourceCmd(), "set", "pushover", "site="); err != nil || !strings.Contains(out, "source pushover: calls go to https://api.pushover.net/1\n") {
+		t.Fatalf("clear site: %q %v", out, err)
+	}
 	out, err = run(t, a.sourceCmd(), "check", "pushover")
 	if err != nil || !strings.Contains(out, "names no check call") || !strings.Contains(out, "nothing was sent") || strings.Contains(out, "tok-of-the-yard") {
 		t.Fatalf("check of a source without a check call: %q %v", out, err)
@@ -716,7 +760,7 @@ calls:
   ping:
     kind: read
     request: { method: GET, path: /me }
-    answer: { select: [name, count, flag, obj, list, missing, head.ref, base.repo.html_url, head.missing] }
+    answer: { select: [name, count, flag, obj, list, missing, head.ref, base.repo.html_url, head.missing, "a\x1b[2Jb"] }
 `
 
 // source check shows the check call's selected fields, one per
@@ -725,13 +769,14 @@ calls:
 // selected object is carried under answer. A selected field the answer
 // does not carry prints no line, the check still succeeding on its
 // status, and a check call with no selection prints exactly what it
-// prints without one. The credential is in neither output.
+// prints without one. A select name holding an escape prints with `?`
+// for it. The credential is in neither output.
 func TestSourceCheckSelectedAnswer(t *testing.T) {
 	t.Parallel()
 	const token = "tok-9c41-not-to-be-seen"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"name":"ada","count":3,"flag":true,"obj":{"a":1},"list":[1,"x"],"extra":"dropped","head":{"ref":"main","sha":"abc"},"base":{"repo":{"html_url":"https://repo.example.com","private":true}}}`)
+		io.WriteString(w, `{"name":"ada","count":3,"flag":true,"obj":{"a":1},"list":[1,"x"],"extra":"dropped","head":{"ref":"main","sha":"abc"},"base":{"repo":{"html_url":"https://repo.example.com","private":true}},"a\u001b[2Jb":"v"}`)
 	}))
 	defer srv.Close()
 	st := storetest.New(t)
@@ -761,12 +806,13 @@ func TestSourceCheckSelectedAnswer(t *testing.T) {
 		"crm: list: [1,\"x\"]\n",
 		"crm: head.ref: main\n",
 		"crm: base.repo.html_url: https://repo.example.com\n",
+		"crm: a?[2Jb: v\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("source check lacks %q:\n%s", want, out)
 		}
 	}
-	for _, not := range []string{token, "missing", "extra", "dropped", "sha", "private"} {
+	for _, not := range []string{token, "missing", "extra", "dropped", "sha", "private", "\x1b"} {
 		if strings.Contains(out, not) {
 			t.Errorf("source check shows %q:\n%s", not, out)
 		}
@@ -785,7 +831,7 @@ func TestSourceCheckSelectedAnswer(t *testing.T) {
 		t.Fatalf("source check --json is no JSON: %v\n%s", err, out)
 	}
 	raw, _ := json.Marshal(got.Answer)
-	if string(raw) != `{"base.repo.html_url":"https://repo.example.com","count":3,"flag":true,"head.ref":"main","list":[1,"x"],"name":"ada","obj":{"a":1}}` {
+	if string(raw) != `{"a\u001b[2Jb":"v","base.repo.html_url":"https://repo.example.com","count":3,"flag":true,"head.ref":"main","list":[1,"x"],"name":"ada","obj":{"a":1}}` {
 		t.Errorf("answer = %s", raw)
 	}
 	if strings.Contains(out, token) {

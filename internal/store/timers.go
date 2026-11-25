@@ -321,13 +321,22 @@ func (s *Store) Timers(ctx context.Context, name string) ([]Timer, error) {
 // it, or the operator (operatorOnly), who removes anyone's. From a
 // session's or a crew member's pane the actor is the pane's (paneAuthor)
 // before the rule is read, so a pane can never pass as the setter, the
-// one told, or the operator by --actor alone.
+// one told, or the operator by --actor alone, and timer_removed names the
+// pane's actor, not the one typed.
 func (s *Store) RemoveTimer(ctx context.Context, id, actor string) (*Timer, error) {
 	t := new(Timer)
 	err := s.write(func(w *wtx) error {
-		var err error
-		t, err = w.removeTimer(ctx, id, actor, nil)
-		return err
+		var (
+			resolved string
+			err      error
+		)
+		if t, resolved, err = w.timerForRemoval(ctx, id, actor); err != nil {
+			return err
+		}
+		if err := w.Bucket(bTimers).Delete([]byte(id)); err != nil {
+			return err
+		}
+		return w.event("", "timer_removed", resolved, map[string]any{"timer": id, "by": t.By, "to": t.To, "reason": t.Reason})
 	})
 	if err != nil {
 		return nil, err
@@ -341,55 +350,29 @@ func timerRemoveDoes(id string, t *Timer) string {
 	return fmt.Sprintf("remove the timer %s, which %s set for %s", id, t.By, t.To)
 }
 
-// checkTimerRemove refuses removing the timer id as actor when it is
-// neither theirs nor told to them: anyone's own is anyone's to remove,
-// and anyone else's is the operator's.
-func (w *wtx) checkTimerRemove(ctx context.Context, id, actor string) error {
-	_, err := w.timerForRemoval(ctx, id, actor)
-	return err
-}
-
-// timerForRemoval is the permission and existence check RemoveTimer uses;
-// a run ask uses the same check to decide whether the operator must approve.
-func (w *wtx) timerForRemoval(ctx context.Context, id, actor string) (*Timer, error) {
+// timerForRemoval is the permission and existence check RemoveTimer uses:
+// anyone's own timer, or one told to them, is theirs to remove, and anyone
+// else's is the operator's. It answers the actor it read the rule for, the
+// one paneAuthor resolved, so the removal is recorded as the one it was
+// allowed as.
+func (w *wtx) timerForRemoval(ctx context.Context, id, actor string) (*Timer, string, error) {
 	resolved, err := paneAuthor(w.Tx, callerOf(ctx), actor)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	actor = resolved
 	t := new(Timer)
 	if ok, err := get(w.Tx, bTimers, id, t); err != nil {
-		return nil, err
+		return nil, "", err
 	} else if !ok {
-		return nil, fmt.Errorf("timer %s: %w", id, ErrNotFound)
+		return nil, "", fmt.Errorf("timer %s: %w", id, ErrNotFound)
 	}
 	if t.By != actor && t.To != actor {
-		if err := w.may(ctx, actor, ActRemoveTimer, Object{Kind: KindTimer, Name: id, Does: timerRemoveDoes(id, t), Ask: Askable}); err != nil {
-			return nil, err
+		if err := w.may(ctx, actor, ActRemoveTimer, Object{Kind: KindTimer, Name: id, Does: timerRemoveDoes(id, t)}); err != nil {
+			return nil, "", err
 		}
 	}
-	return t, nil
-}
-
-// removeTimer is RemoveTimer inside the transaction, so that an approved
-// run ask removes the timer in the write that records its approval: by is
-// then the ask it was approved on, which the event carries.
-func (w *wtx) removeTimer(ctx context.Context, id, actor string, by *approvedOn) (*Timer, error) {
-	t, err := w.timerForRemoval(ctx, id, actor)
-	if err != nil {
-		return nil, err
-	}
-	if err := w.Bucket(bTimers).Delete([]byte(id)); err != nil {
-		return nil, err
-	}
-	data := map[string]any{"timer": id, "by": t.By, "to": t.To, "reason": t.Reason}
-	if by != nil {
-		data["approved"] = by
-	}
-	if err := w.event("", "timer_removed", actor, data); err != nil {
-		return nil, err
-	}
-	return t, nil
+	return t, actor, nil
 }
 
 // unlessState is how a timer's awaited bead stands.

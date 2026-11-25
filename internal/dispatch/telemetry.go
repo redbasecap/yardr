@@ -30,6 +30,12 @@ func (d *Dispatcher) telemetry(ctx context.Context) {
 	if d.Home == "" {
 		return // no home, no state file: nothing is sent
 	}
+	// The release check rides this pass's tail: same cadence (every
+	// pass), same setting-read and state-file shape, and it earns its
+	// own step with a future registry of daily passes. Deferred here
+	// rather than called at the end, which the off return below would
+	// skip: the check runs whatever telemetry does.
+	defer d.releaseCheck(ctx)
 	// A pass that met no fault of its own ends the one said before, so a
 	// fault that goes and comes back is said again, and one that stays is
 	// said once.
@@ -106,11 +112,17 @@ func (d *Dispatcher) telemetry(ctx context.Context) {
 		d.Log.Warn("telemetry: batch not accepted", "status", status, "class", class)
 		return
 	}
+	// The project took the batch: the cursor moves and the command
+	// counts it carried drain, even on a day with no source days (a
+	// same-day snapshot batch still carried them). A batch the project
+	// refused never reaches here, so its counts go again tomorrow.
+	through := state.LastDaySent
 	if n := len(next.SourceDays); n > 0 {
-		if err := telemetry.MarkSent(path, state.InstallID, next.SourceDays[n-1]); err != nil {
-			// The days go again tomorrow and deduplicate there.
-			fault("advancing the source-day cursor", err)
-		}
+		through = next.SourceDays[n-1]
+	}
+	if err := telemetry.MarkSent(path, state.InstallID, through, state.Commands); err != nil {
+		// The days and counts go again tomorrow and deduplicate there.
+		fault("recording the batch as sent", err)
 	}
 	d.Log.Info("telemetry: batch sent", "events", len(next.Request.Batch), "source_days", len(next.SourceDays))
 }

@@ -71,8 +71,9 @@ which only a person or a crew member does. An advance along the edge
 `done-safe` takes is held to the depot's security paths as the outcome is. Every call this page names is read or agent but those of
 [`OperatorCalls`](#over-the-network), which are admin, all but
 `SourceGrants`, which is read on the socket and the operator's on the
-listener, `SessionScreen`, `Teammates`, `TelemetryShow`, `TelemetrySet`,
-`DevicePairState` and `DevicePairClose`, whose socket class is operator,
+listener, `SessionScreen`, `Line`, `Prime`, `Teammates`, `TelemetryShow`,
+`TelemetrySet`, `DevicePairState` and `DevicePairClose`, whose socket class
+is operator,
 and `UninviteTeammate`, whose socket class
 is agent.
 
@@ -336,7 +337,7 @@ Mail was queued for one of a linked yard: the conversation with `<data.to>@<data
 
 ```json
 {
-  "seq": 199,
+  "seq": 200,
   "kind": "mail",
   "actor": "jo",
   "data": {
@@ -364,7 +365,7 @@ A user or a crew member acknowledged its mail: either everything through `data.t
 
 ```json
 {
-  "seq": 201,
+  "seq": 202,
   "kind": "mail_read",
   "data": {
     "reader": "jo",
@@ -509,7 +510,7 @@ A user acknowledged their notifications, in this client or another.
 
 ```json
 {
-  "seq": 203,
+  "seq": 204,
   "kind": "notifications_read",
   "data": {
     "reader": "jo",
@@ -551,7 +552,7 @@ A note was added to the bead: a plain note, a question (an ask), or an answer (a
 | `at` | time | when |
 | `data.note` | number, may be absent | the note's seq; absent on a question another yard asked |
 | `data.ask` | number, may be absent | the ask's seq on its bead, for a question another yard asked; absent otherwise |
-| `data.witness` | string, may be absent | how a strong approval was witnessed: `fresh sign-in` in the hosted web, `terminal` on the socket; absent otherwise, and on an approval through a device, which names the device in `data.via` instead |
+| `data.witness` | string, may be absent | how a weighty approval was witnessed: `fresh sign-in` in the hosted web, `terminal` on the socket; absent otherwise, and on an approval through a device, which names the device in `data.via` instead |
 
 ### A bead was closed: `closed`
 
@@ -652,6 +653,36 @@ The limit of an outcome reported on the bead was used, and the bead went to the 
 | `data.rounds` | number | the rounds counted for `data.to`: the outcome's limit or more |
 | `data.to` | string | the stage the outcome leads to, which the bead did not go back to |
 | `data.then` | string | the stage the bead went to instead |
+
+### A thread's flap guard held an event: `flap_held`
+
+A hook's thread made its bounded few beads in a day, so the event that would have made another was held and no bead was made. It is of the class `attention`, so a crew member that hears the class, and a subscription to it, has it. At most one is logged in a day for a thread.
+
+```json
+{
+  "seq": 197,
+  "kind": "flap_held",
+  "actor": "yard",
+  "data": {
+    "event": "issues",
+    "hook": "gh",
+    "made": 3,
+    "seq": 41
+  },
+  "at": "2026-10-08T09:30:00Z"
+}
+```
+
+| field | type | |
+|---|---|---|
+| `seq` | number | the event's seq |
+| `kind` | string | `flap_held` |
+| `actor` | string | `yard` |
+| `at` | time | when |
+| `data.hook` | string | the hook whose table the held event matched |
+| `data.event` | string | the held event's type at its source |
+| `data.seq` | number | the seq of the event that was held |
+| `data.made` | number | the beads the thread made in the day the guard counts |
 
 <!-- /events -->
 
@@ -787,13 +818,14 @@ nothing else. What is not the same:
   with `TelemetryShow` and `TelemetrySet`.
   `/ping`, `/wake` and every other path are not there. The [calls for the
   operator alone](#for-the-operator-alone) are there besides, for a device
-  of an operator of the yard and for nobody else — but for the three that
-  open, read and end a pairing (`DevicePairOpen`, `DevicePairState` and
-  `DevicePairClose`), which are the socket's alone and are answered as no
-  method at all; `GiveSecret` is there too for
+  of an operator of the yard and for nobody else — but for the four that
+  are the socket's alone and are answered as no method at all: the three
+  that open, read and end a pairing (`DevicePairOpen`, `DevicePairState`
+  and `DevicePairClose`) and `Prime`; `GiveSecret` is there too for
   a device of a user, for an ask with `secret.user` or `secret.as` that
-  names them: their own address or credential in a source, or with
-  `secret.login` the code their own login's sign-in page shows.
+  names them: their own address or credential in a source, with
+  `secret.login` the code their own login's sign-in page shows, or with
+  `secret.google` their own Google sign-in.
   `ApproveAsk` and `ApproveSetup` are the calls on the listener that have
   the operator's commands run: the command of a run ask, which is one of a
   fixed list ([users.md](users.md#devices) has them, row by row), and the
@@ -1313,8 +1345,9 @@ approvals, `SessionScreen`, `Line` and the teammates calls also down the link fr
 the edge, and `GiveSecret` there for every secret on a hosted yard and, on any
 other, for every secret when the call came sealed from the operator's device and
 for the code of a harness login alone when it came plain, and on either from a
-member's own device the code of their own sign-in when the call came sealed,
-`ApproveSetup` with the account typed being a secret there too
+member's own device the code of their own sign-in when the call came sealed and
+their own Google sign-in when the call came sealed from a device paired with
+the QR, `ApproveSetup` with the account typed being a secret there too
 ([edge.md](edge.md#footplate-through-the-link)) — and never from one whose
 proxy says it came in plain (`X-Forwarded-Proto: http`; the header is read
 for a no and never for a yes). Any other is refused with
@@ -1342,7 +1375,8 @@ control uses the separate `web` link and the JWT-authenticated view, acting
 as the mapped yard user. Every
 other call is served wherever it comes from, as before. The three that
 open, read and end a pairing, `DevicePairOpen`, `DevicePairState` and
-`DevicePairClose`, are the socket's alone: the listener answers each as a
+`DevicePairClose`, and `Prime`, which reads a crew member's role and a
+depot's rules, are the socket's alone: the listener answers each as a
 method the yard does not have, to a device of the operator too, so the
 rule above has no request of theirs to hold.
 
@@ -1387,10 +1421,11 @@ two fixes: a sealed device, which pairing the device with the QR makes, and the
 yard's own machine.
 
 On either yard a device of a user who is not the operator is taken `GiveSecret`
-down the link for one ask: that user's own login input, the code their own
-sign-in page shows ([users.md](users.md#the-record)). It is taken only when the
-call came sealed, inside the channel of a device that pinned a key at a
-pairing or in place ([a channel key registered in place](#a-channel-key-registered-in-place);
+down the link for two asks: that user's own login input, the code their own
+sign-in page shows ([users.md](users.md#the-record)), and that user's own
+Google sign-in ([google.md](google.md#step-1-the-gws-login)). The login input
+is taken only when the call came sealed, inside the channel of a device that
+pinned a key at a pairing or in place ([a channel key registered in place](#a-channel-key-registered-in-place);
 the envelope is [the end-to-end design](design/2026-11-05-yardr-device-e2e.md),
 section 3.2), which the edge carries and cannot open. The ask is one with
 `secret.login` set, `secret.as` the caller, and `secret.env` of `["INPUT"]`,
@@ -1398,13 +1433,27 @@ and nothing else of `secret` set: the whole of the ask is compared, so a field
 it gains later is not taken until this says so. The body is read for the ask it
 names, as for the operator's, and carries only that ask's values. The code is
 used once, within minutes, and the yard hands it to the waiting login, the
-user's own, in its memory and keeps it nowhere. A call with it that came plain
-is refused, and so is every other secret of such a device, sealed or not, with
-the code `error` and one sentence, the same on a hosted yard and on any other:
-a secret from a member's device does not cross the edge but for the code of
-their own sign-in from a sealed device, and the operator gives the rest, on the
-yard's machine, from their own sealed device, or from any paired device of theirs
-where the yard is hosted. A
+user's own, in its memory and keeps it nowhere. The Google sign-in is an ask
+with `secret.google` set, `secret.as` the caller, and `secret.env` of
+`["GOOGLE_CREDENTIALS"]`, and nothing else of `secret` set beside its scopes:
+the whole of the ask is compared, as the login's is. It is taken only when
+the call came sealed from a device paired with the QR: a device sealed in
+place does not carry it, since the export is a refresh token that is written
+to disk and lasts, where the code is used once and kept in memory, and
+pairing the device again with the QR lifts that. The body carries only that
+ask's values, the pasted output of `gws auth export --unmasked`, whose bare
+line breaks the store strips before it checks the export and writes it,
+mode 0600, to the account's credentials file. A Google giving that came plain or from a device sealed in place is refused
+with the code `error` in its own sentence naming the QR-paired device and
+the terminal command (`yardr bead answer <bead> <ask> --secret`), and never
+the operator, who is refused that giving (a plain call adds that the edge
+saw what was sent with it; a sealed one drops that). A plain login-code
+giving and every other secret of such a device, sealed or not, is refused
+with the code `error` and one sentence, the same on a hosted yard and on
+any other: a secret from a member's device does not cross the edge, except
+the code of their own sign-in from a sealed device, and the operator gives
+the rest, on the yard's machine, from their own sealed device, or from any
+paired device of theirs where the yard is hosted. A
 giving that is taken is held to the approvals' rule there: when the edge says
 the device reached it in plain HTTP, it is refused as they are.
 
@@ -1452,7 +1501,7 @@ POST /call/Head
 {}
 
 {
-  "result": 196
+  "result": 197
 }
 ```
 
@@ -1493,7 +1542,7 @@ POST /call/Settings
 
 The operator's words are what every session of an agent reads when it starts (`yardr prime`), so the socket tells them to whoever calls, and every other setting with them. Over the network a device is told these keys alone: the words and `hosted` to a device of an operator and to no other, and to none in a yard with no operator; `yard_description` to every device. A `setting_changed` in a device's stream has its `value` only for a key the device is told; for any other it has the `key` and no `value`.
 
-`hosted` is how a client down the link from the edge learns which yard it has reached: a hosted yard takes `GiveSecret` there from the operator's device for every secret, and any other yard for every secret when the call came sealed and for a harness login's code alone when it came plain; either takes a member's own sign-in code from their sealed device ([TLS is yours](#tls-is-yours-and-the-clients-rule)).
+`hosted` is how a client down the link from the edge learns which yard it has reached: a hosted yard takes `GiveSecret` there from the operator's device for every secret, and any other yard for every secret when the call came sealed and for a harness login's code alone when it came plain; either takes a member's own sign-in code from their sealed device and a member's own Google sign-in from their device paired with the QR ([TLS is yours](#tls-is-yours-and-the-clients-rule)).
 
 ### `Users`
 
@@ -1967,7 +2016,7 @@ POST /call/Conversation
       "as": "jo"
     },
     {
-      "seq": 197,
+      "seq": 198,
       "at": "2026-10-08T09:30:00Z",
       "from": "jo",
       "to": "yardmaster",
@@ -1975,7 +2024,7 @@ POST /call/Conversation
       "read": false
     },
     {
-      "seq": 198,
+      "seq": 199,
       "at": "2026-10-08T09:30:00Z",
       "from": "jo",
       "to": "yardmaster",
@@ -2001,7 +2050,7 @@ POST /call/Conversation
 {
   "result": [
     {
-      "seq": 197,
+      "seq": 198,
       "at": "2026-10-08T09:30:00Z",
       "from": "jo",
       "to": "yardmaster",
@@ -2009,7 +2058,7 @@ POST /call/Conversation
       "read": false
     },
     {
-      "seq": 198,
+      "seq": 199,
       "at": "2026-10-08T09:30:00Z",
       "from": "jo",
       "to": "yardmaster",
@@ -2036,7 +2085,7 @@ POST /call/Conversation
 {
   "result": [
     {
-      "seq": 199,
+      "seq": 200,
       "at": "2026-10-08T09:30:00Z",
       "from": "jo",
       "to": "clerk@north",
@@ -2496,7 +2545,7 @@ POST /call/UserAsks
               }
             }
           ],
-          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group builders and crew yardmaster — pick one:"],
+          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the site of source courier: its calls go to https://eu.courier.example.com/api. To scope them to a site of your own instead, give its site with --site \u003csite\u003e (one path segment, yours to type): they then go to https://courier.example.com/ex/\u003csite\u003e/api, and the account below is given for that host and site.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group builders and crew yardmaster — pick one:"],
           "back": "yardr source rm courier; yardr source revoke courier \u003cwhat\u003e --group builders --crew yardmaster",
           "back_by": "the operator",
           "presets": [
@@ -2528,7 +2577,8 @@ POST /call/UserAsks
             }
           ],
           "base": "eu",
-          "host_template": "https://{host}/api"
+          "host_template": "https://{host}/api",
+          "site_template": "https://courier.example.com/ex/{site}/api"
         },
         "weight": [
           {
@@ -2568,7 +2618,7 @@ POST /call/UserAsks
               }
             }
           ],
-          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to crew yardmaster — pick one:"],
+          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the site of source courier: its calls go to https://eu.courier.example.com/api. To scope them to a site of your own instead, give its site with --site \u003csite\u003e (one path segment, yours to type): they then go to https://courier.example.com/ex/\u003csite\u003e/api, and the account below is given for that host and site.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to crew yardmaster — pick one:"],
           "back": "yardr source rm courier; yardr source revoke courier \u003cwhat\u003e --crew yardmaster",
           "back_by": "the operator",
           "presets": [
@@ -2597,7 +2647,8 @@ POST /call/UserAsks
             }
           ],
           "base": "eu",
-          "host_template": "https://{host}/api"
+          "host_template": "https://{host}/api",
+          "site_template": "https://courier.example.com/ex/{site}/api"
         },
         "weight": [
           {
@@ -3141,7 +3192,7 @@ POST /call/UserAsks
               }
             }
           ],
-          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group elders and crew yardmaster — pick one:"],
+          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the site of source courier: its calls go to https://eu.courier.example.com/api. To scope them to a site of your own instead, give its site with --site \u003csite\u003e (one path segment, yours to type): they then go to https://courier.example.com/ex/\u003csite\u003e/api, and the account below is given for that host and site.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group elders and crew yardmaster — pick one:"],
           "back": "yardr source rm courier; yardr source revoke courier \u003cwhat\u003e --group elders --crew yardmaster",
           "back_by": "the operator",
           "presets": [
@@ -3173,7 +3224,8 @@ POST /call/UserAsks
             }
           ],
           "base": "eu",
-          "host_template": "https://{host}/api"
+          "host_template": "https://{host}/api",
+          "site_template": "https://courier.example.com/ex/{site}/api"
         },
         "weight": [
           {
@@ -3481,6 +3533,7 @@ POST /call/UserAsks
 | `open[].setup.pack` | string | the pack to set up, of kind source: one yardr embeds, or one the operator applied from a directory and left as it was |
 | `open[].setup.base` | string, may be absent | the selected region base name; absent when calls go to the declaration's own base |
 | `open[].setup.host_template` | string, may be absent | the address a host of the operator's own fills, with `{host}` where it goes (`https://{host}/api/v1`): the card asks for that host above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `host`. Absent where no source the pack carries declares a `base_template` |
+| `open[].setup.site_template` | string, may be absent | the address a site of the operator's own fills, with `{site}` as one path segment (`https://api.example.com/ex/{site}/wiki`): the card asks for that site above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `site`. Absent where no source the pack carries declares a `path_template` |
 | `open[].setup.label` | string, may be absent | where the pack was read from, as the card shows it: the build it is embedded in, or the directory the operator applied it from and the commit it was at |
 | `open[].setup.account` | array of string | the names to type unseen beside the preset pick |
 | `open[].setup.account_file` | string, may be absent | the file the value goes to, on the yard's machine. A device of the current operator is told it, whoever the ask was put to. Any other device is told the card with the field absent, even the device of a user the ask was put to while they were the operator, and so is every device of a yard with no operator. The socket tells the whole card |
@@ -3539,6 +3592,7 @@ POST /call/UserAsks
 | `decided[].setup.pack` | string | the pack to set up, of kind source: one yardr embeds, or one the operator applied from a directory and left as it was |
 | `decided[].setup.base` | string, may be absent | the selected region base name; absent when calls go to the declaration's own base |
 | `decided[].setup.host_template` | string, may be absent | the address a host of the operator's own fills, with `{host}` where it goes (`https://{host}/api/v1`): the card asks for that host above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `host`. Absent where no source the pack carries declares a `base_template` |
+| `decided[].setup.site_template` | string, may be absent | the address a site of the operator's own fills, with `{site}` as one path segment (`https://api.example.com/ex/{site}/wiki`): the card asks for that site above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `site`. Absent where no source the pack carries declares a `path_template` |
 | `decided[].setup.label` | string, may be absent | where the pack was read from, as the card shows it: the build it is embedded in, or the directory the operator applied it from and the commit it was at |
 | `decided[].setup.account` | array of string | the names to type unseen beside the preset pick |
 | `decided[].setup.account_file` | string, may be absent | the file the value goes to, on the yard's machine. A device of the current operator is told it, whoever the ask was put to. Any other device is told the card with the field absent, even the device of a user the ask was put to while they were the operator, and so is every device of a yard with no operator. The socket tells the whole card |
@@ -3880,7 +3934,7 @@ POST /call/UserOpenAsks
               }
             }
           ],
-          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group builders and crew yardmaster — pick one:"],
+          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the site of source courier: its calls go to https://eu.courier.example.com/api. To scope them to a site of your own instead, give its site with --site \u003csite\u003e (one path segment, yours to type): they then go to https://courier.example.com/ex/\u003csite\u003e/api, and the account below is given for that host and site.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group builders and crew yardmaster — pick one:"],
           "back": "yardr source rm courier; yardr source revoke courier \u003cwhat\u003e --group builders --crew yardmaster",
           "back_by": "the operator",
           "presets": [
@@ -3912,7 +3966,8 @@ POST /call/UserOpenAsks
             }
           ],
           "base": "eu",
-          "host_template": "https://{host}/api"
+          "host_template": "https://{host}/api",
+          "site_template": "https://courier.example.com/ex/{site}/api"
         },
         "weight": [
           {
@@ -3952,7 +4007,7 @@ POST /call/UserOpenAsks
               }
             }
           ],
-          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to crew yardmaster — pick one:"],
+          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the site of source courier: its calls go to https://eu.courier.example.com/api. To scope them to a site of your own instead, give its site with --site \u003csite\u003e (one path segment, yours to type): they then go to https://courier.example.com/ex/\u003csite\u003e/api, and the account below is given for that host and site.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to crew yardmaster — pick one:"],
           "back": "yardr source rm courier; yardr source revoke courier \u003cwhat\u003e --crew yardmaster",
           "back_by": "the operator",
           "presets": [
@@ -3981,7 +4036,8 @@ POST /call/UserOpenAsks
             }
           ],
           "base": "eu",
-          "host_template": "https://{host}/api"
+          "host_template": "https://{host}/api",
+          "site_template": "https://courier.example.com/ex/{site}/api"
         },
         "weight": [
           {
@@ -4296,6 +4352,7 @@ POST /call/UserOpenAsks
 | `open[].setup.pack` | string | the pack to set up, of kind source: one yardr embeds, or one the operator applied from a directory and left as it was |
 | `open[].setup.base` | string, may be absent | the selected region base name; absent when calls go to the declaration's own base |
 | `open[].setup.host_template` | string, may be absent | the address a host of the operator's own fills, with `{host}` where it goes (`https://{host}/api/v1`): the card asks for that host above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `host`. Absent where no source the pack carries declares a `base_template` |
+| `open[].setup.site_template` | string, may be absent | the address a site of the operator's own fills, with `{site}` as one path segment (`https://api.example.com/ex/{site}/wiki`): the card asks for that site above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `site`. Absent where no source the pack carries declares a `path_template` |
 | `open[].setup.label` | string, may be absent | where the pack was read from, as the card shows it: the build it is embedded in, or the directory the operator applied it from and the commit it was at |
 | `open[].setup.account` | array of string | the names to type unseen beside the preset pick |
 | `open[].setup.account_file` | string, may be absent | the file the value goes to, on the yard's machine. A device of the current operator is told it, whoever the ask was put to. Any other device is told the card with the field absent, even the device of a user the ask was put to while they were the operator, and so is every device of a yard with no operator. The socket tells the whole card |
@@ -5213,13 +5270,13 @@ POST /call/Bead
               }
             }
           ],
-          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group builders and crew yardmaster — pick one:"],
+          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the site of source courier: its calls go to https://eu.courier.example.com/api. To scope them to a site of your own instead, give its site with --site \u003csite\u003e (one path segment, yours to type): they then go to https://courier.example.com/ex/\u003csite\u003e/api, and the account below is given for that host and site.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group builders and crew yardmaster — pick one:"],
           "back": "yardr source rm courier; yardr source revoke courier \u003cwhat\u003e --group builders --crew yardmaster",
           "back_by": "the operator",
           "carried": [
             {
               "name": "courier",
-              "text": "name: courier\nbase: https://courier.example.com/api\nbases:\n  us: https://courier.example.com/api\n  eu: https://eu.courier.example.com/api\nbase_template: https://{host}/api\ncredential:\n  env: COURIER_TOKEN\n  header: \"Authorization: Bearer {credential}\"\n  mint: [COURIER_ACCOUNT]\n  mint_command: [courier-mint]\ncalls:\n  ping: { kind: read, request: { method: GET, path: /me } }\n  put: { kind: update, request: { method: POST, path: /it } }\n",
+              "text": "name: courier\nbase: https://courier.example.com/api\nbases:\n  us: https://courier.example.com/api\n  eu: https://eu.courier.example.com/api\nbase_template: https://{host}/api\npath_template: https://courier.example.com/ex/{site}/api\ncredential:\n  env: COURIER_TOKEN\n  header: \"Authorization: Bearer {credential}\"\n  mint: [COURIER_ACCOUNT]\n  mint_command: [courier-mint]\ncalls:\n  ping: { kind: read, request: { method: GET, path: /me } }\n  put: { kind: update, request: { method: POST, path: /it } }\n",
               "files": [
                 {
                   "program": "courier-mint",
@@ -5258,7 +5315,8 @@ POST /call/Bead
             }
           ],
           "base": "eu",
-          "host_template": "https://{host}/api"
+          "host_template": "https://{host}/api",
+          "site_template": "https://courier.example.com/ex/{site}/api"
         },
         "weight": [
           {
@@ -5312,13 +5370,13 @@ POST /call/Bead
               }
             }
           ],
-          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to crew yardmaster — pick one:"],
+          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the site of source courier: its calls go to https://eu.courier.example.com/api. To scope them to a site of your own instead, give its site with --site \u003csite\u003e (one path segment, yours to type): they then go to https://courier.example.com/ex/\u003csite\u003e/api, and the account below is given for that host and site.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to crew yardmaster — pick one:"],
           "back": "yardr source rm courier; yardr source revoke courier \u003cwhat\u003e --crew yardmaster",
           "back_by": "the operator",
           "carried": [
             {
               "name": "courier",
-              "text": "name: courier\nbase: https://courier.example.com/api\nbases:\n  us: https://courier.example.com/api\n  eu: https://eu.courier.example.com/api\nbase_template: https://{host}/api\ncredential:\n  env: COURIER_TOKEN\n  header: \"Authorization: Bearer {credential}\"\n  mint: [COURIER_ACCOUNT]\n  mint_command: [courier-mint]\ncalls:\n  ping: { kind: read, request: { method: GET, path: /me } }\n  put: { kind: update, request: { method: POST, path: /it } }\n",
+              "text": "name: courier\nbase: https://courier.example.com/api\nbases:\n  us: https://courier.example.com/api\n  eu: https://eu.courier.example.com/api\nbase_template: https://{host}/api\npath_template: https://courier.example.com/ex/{site}/api\ncredential:\n  env: COURIER_TOKEN\n  header: \"Authorization: Bearer {credential}\"\n  mint: [COURIER_ACCOUNT]\n  mint_command: [courier-mint]\ncalls:\n  ping: { kind: read, request: { method: GET, path: /me } }\n  put: { kind: update, request: { method: POST, path: /it } }\n",
               "files": [
                 {
                   "program": "courier-mint",
@@ -5354,7 +5412,8 @@ POST /call/Bead
             }
           ],
           "base": "eu",
-          "host_template": "https://{host}/api"
+          "host_template": "https://{host}/api",
+          "site_template": "https://courier.example.com/ex/{site}/api"
         },
         "weight": [
           {
@@ -5565,13 +5624,13 @@ POST /call/Bead
               }
             }
           ],
-          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group elders and crew yardmaster — pick one:"],
+          "does": ["pack courier (embedded in yardr doctest), of kind source, into the yard: it adds 1 source and copies 1 command file (1 command), and changes nothing else. It makes no hook and sets no credential's file.", "source courier: its calls go to https://eu.courier.example.com/api (base eu). Its credential is the variable COURIER_TOKEN (the name, never the value), minted from COURIER_ACCOUNT by the declaration's own mint command [courier-mint] (command file courier-mint, copied to \u003chome\u003e/sources/courier/courier-mint: sha256 275239824e00e61b0a220e61a41791c7e9b4bd726f8b0c27077a338f8131c9dc, mode 0700), run with the mint's inputs and the operator's local logins where the source's mint_command is unset: one the operator sets wins over it, sent in the header \"Authorization: Bearer {credential}\" on every call. It has no second credential for updates.", "call ping (read): GET /me. It takes no parameter, and sends no query.", "call ping sends no body. Its answer is returned as it comes, at most 65536 bytes.", "call put (update): POST /it. It takes no parameter, and sends no query.", "call put sends no body. Its answer is returned as it comes, at most 65536 bytes.", "it has no check call, no idempotency header, no way to tell a user, no way to hear deliveries, no limits command, no way to speak in threads, no bead link, no identity fold (its identity keys keep their case), no hook deliveries into the yard and no pull-request or CI events.", "it names no command but its mint command, said with its credential above.", "the host of source courier: its calls go to https://eu.courier.example.com/api. To send them to a server of your own instead, give its host with --host \u003chost\u003e (a name or an address with an optional port, yours to type): they then go to https://\u003chost\u003e/api, and the account below is given for that host.", "the site of source courier: its calls go to https://eu.courier.example.com/api. To scope them to a site of your own instead, give its site with --site \u003csite\u003e (one path segment, yours to type): they then go to https://courier.example.com/ex/\u003csite\u003e/api, and the account below is given for that host and site.", "the account COURIER_ACCOUNT: already given for courier-existing (COURIER_ACCOUNT=jo@example.test, in /home/jo/.yardr/sources/courier-existing.env). Take it with --account courier-existing, or type another unseen (written to /home/jo/.yardr/sources/courier.env, named in the answer, never the value).", "grants to group elders and crew yardmaster — pick one:"],
           "back": "yardr source rm courier; yardr source revoke courier \u003cwhat\u003e --group elders --crew yardmaster",
           "back_by": "the operator",
           "carried": [
             {
               "name": "courier",
-              "text": "name: courier\nbase: https://courier.example.com/api\nbases:\n  us: https://courier.example.com/api\n  eu: https://eu.courier.example.com/api\nbase_template: https://{host}/api\ncredential:\n  env: COURIER_TOKEN\n  header: \"Authorization: Bearer {credential}\"\n  mint: [COURIER_ACCOUNT]\n  mint_command: [courier-mint]\ncalls:\n  ping: { kind: read, request: { method: GET, path: /me } }\n  put: { kind: update, request: { method: POST, path: /it } }\n",
+              "text": "name: courier\nbase: https://courier.example.com/api\nbases:\n  us: https://courier.example.com/api\n  eu: https://eu.courier.example.com/api\nbase_template: https://{host}/api\npath_template: https://courier.example.com/ex/{site}/api\ncredential:\n  env: COURIER_TOKEN\n  header: \"Authorization: Bearer {credential}\"\n  mint: [COURIER_ACCOUNT]\n  mint_command: [courier-mint]\ncalls:\n  ping: { kind: read, request: { method: GET, path: /me } }\n  put: { kind: update, request: { method: POST, path: /it } }\n",
               "files": [
                 {
                   "program": "courier-mint",
@@ -5610,7 +5669,8 @@ POST /call/Bead
             }
           ],
           "base": "eu",
-          "host_template": "https://{host}/api"
+          "host_template": "https://{host}/api",
+          "site_template": "https://courier.example.com/ex/{site}/api"
         },
         "weight": [
           {
@@ -6056,7 +6116,7 @@ POST /call/Bead
 | `asks[].depot_push.does` | array of string | what approving changes and what stands now, in the yard's words |
 | `asks[].depot_push.back` | string | the filing that takes the change back |
 | `asks[].depot_push.back_by` | string, may be absent | who may file `back`, in words that stand before `can take it back`; absent where that is anyone |
-| `asks[].run` | object, may be absent | the command a run ask proposes: one yardr command that is the operator's to give, which the yard runs when the operator approves the ask. Absent on any other ask. Such an ask has no options and takes no words: `AnswerAsk` refuses a pick and words on it, `DeferAsk` and `DeclineAsk` take it as any ask, and it is approved with [`ApproveAsk`](#for-the-operator-alone), by the operator: at the yard (`yardr bead answer <bead> <ask> --approve`, with `--value <name>=<value>` where the card asks for values in the clear), or from a device of the operator. A strong card ([weighty cards](#weighty-cards)) is approved from a device as any weighty card is; the bead page approves it only on a hosted yard, under a fresh sign-in. A command that is a user's own (`subscribe <user> yardr`, `user set <user> tell=<parts>`, `user key <user> <source>`, `user device rm <user> <device>`, `user device pair <user> <device>`) is approved at the yard by the one it was asked of, that user or the operator. All of `run` is the yard's, made when the ask was written, and none of it the asker's: show it apart from `question` and `context`, which are the asker's words, and draw those as plain text |
+| `asks[].run` | object, may be absent | the command a run ask proposes: one yardr command that is the operator's to give, which the yard runs when the operator approves the ask. Absent on any other ask. Such an ask has no options and takes no words: `AnswerAsk` refuses a pick and words on it, `DeferAsk` and `DeclineAsk` take it as any ask, and it is approved with [`ApproveAsk`](#for-the-operator-alone), by the operator: at the yard (`yardr bead answer <bead> <ask> --approve`, with `--value <name>=<value>` where the card asks for values in the clear), or from a device of the operator. A strong card ([weighty cards](#weighty-cards)) is approved from a device as any weighty card is; the bead page approves it only on a hosted yard, under a fresh sign-in. A command that is a user's own (`subscribe <user> yardr`, `user set <user> tell=<parts>`, `user key <user> <source>`, `user device pair <user> <device>`) is approved at the yard by the one it was asked of, that user or the operator. All of `run` is the yard's, made when the ask was written, and none of it the asker's: show it apart from `question` and `context`, which are the asker's words, and draw those as plain text |
 | `asks[].run.argv` | array of string | the command in words, without the leading `yardr`, as the yard parsed it. On a run ask that sets a setting, adds a source, or applies a pack with a depot or mappings named, told to a device of the operator alone ([over the network](#over-the-network)): `[]` on any other device's card, and on every device's of a yard with no operator. The socket tells the whole card |
 | `asks[].run.command` | string | the command whole, as it is typed in a terminal and as it would run. Never shorten it: a view that cannot show it whole says where the ask can be read instead. On a run ask that sets a setting, adds a source, or applies a pack with a depot or mappings named, told to a device of the operator alone ([over the network](#over-the-network)): `""` on any other device's card, and on every device's of a yard with no operator. The socket tells the whole card |
 | `asks[].run.does` | array of string | what the command changes and what is there now, in the yard's words, a sentence each, with what it names as the yard knows it |
@@ -6071,6 +6131,7 @@ POST /call/Bead
 | `asks[].setup.pack` | string | the pack to set up, of kind source (one yardr embeds, or one the operator applied from a directory and left as it was), whose `yardr pack show <pack>` prints the presets numbered |
 | `asks[].setup.base` | string, may be absent | the selected region base name; absent when calls go to the declarations' own bases |
 | `asks[].setup.host_template` | string, may be absent | the address a host of the operator's own fills, with `{host}` where it goes (`https://{host}/api/v1`): the card asks for that host above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `host`. Absent where no source the pack carries declares a `base_template` |
+| `asks[].setup.site_template` | string, may be absent | the address a site of the operator's own fills, with `{site}` as one path segment (`https://api.example.com/ex/{site}/wiki`): the card asks for that site above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `site`. Absent where no source the pack carries declares a `path_template` |
 | `asks[].setup.label` | string, may be absent | where the pack was read from, as the card shows it: the build it is embedded in, or the directory the operator applied it from and the commit it was at |
 | `asks[].setup.account` | array of string | the names the account is made of: the mint's inputs where the pack's credential is minted, else every credential name. A first setup types every one beside the preset pick; an update says by `given` and `missing` which of them the account file that stands holds. Where the card lists candidates, the answer names one of them instead |
 | `asks[].setup.account_file` | string, may be absent | the file a typed value goes to, on the yard's machine; on an update, the account file that stands. Told to a device of the operator alone ([over the network](#over-the-network)): absent on any other device's card, and on every device's of a yard with no operator. The socket tells the whole card |
@@ -6826,14 +6887,14 @@ POST /call/DeclineAskExpected
 
 ### `TakeBackAsk`
 
-Takes an open ask back: its asker asks it no more, and says why. It is what `yardr bead ask --take-back` does. The ask leaves the person's open decisions and stands among the decided as `taken back`, with `by` and the reason as `words`: "taken back by `<by>`: `<words>`", never an answer of the person. It is the asker's to do and the operator's, and is refused for anyone else; refused too on an ask that is answered, declined or taken back already, and on a `bead@peer`, which is taken back in the yard that asked. An ask put aside is taken back as an open one is. `AnswerAsk`, `DeferAsk`, `DeclineAsk` and `GiveSecret` refuse it afterwards, naming who took it back and why. Where the ask also stands in a linked yard it leaves the decisions there as well, with `it was taken back in <peer>'s yard`. It answers nothing; taking it back is then a `noted` event in the stream.
+Takes an open ask back: its asker asks it no more, and says why. It is what `yardr bead ask --take-back` does. The ask leaves the person's open decisions and stands among the decided as `taken back`, with `by` and the reason as `words`: "taken back by `<by>`: `<words>`", never an answer of the person. It is the asker's to do and the operator's, and a crew member addressed by a stage ask takes that ask back to pass it up to the stage's people ([flows.md](flows.md#the-ask-template--ask)); it is refused for anyone else; refused too on an ask that is answered, declined or taken back already, and on a `bead@peer`, which is taken back in the yard that asked. An ask put aside is taken back as an open one is. `AnswerAsk`, `DeferAsk`, `DeclineAsk` and `GiveSecret` refuse it afterwards, naming who took it back and why. Where the ask also stands in a linked yard it leaves the decisions there as well, with `it was taken back in <peer>'s yard`. It answers nothing; taking it back is then a `noted` event in the stream.
 
 | argument | type | |
 |---|---|---|
 | `bead` | string | the bead |
 | `ask` | number | the ask note's seq |
 | `reason` | string | why it is asked no more, in a line: the person reads it where the question stood |
-| `actor` | string | who takes it back: the asker's name, or the operator's |
+| `actor` | string | who takes it back: the asker's name, the operator's, or the crew member a stage ask addresses passing it up |
 
 ```
 POST /call/TakeBackAsk
@@ -7604,7 +7665,7 @@ POST /call/MailExchange
         ]
       },
       {
-        "seq": 233,
+        "seq": 234,
         "at": "2026-10-08T09:30:00Z",
         "from": "jo",
         "to": "yardmaster",
@@ -7649,7 +7710,7 @@ operator's alone to make. An operator is a user whose role is `operator`
 there may be several, and each of them makes these calls. The `operator`
 setting names one of them, the one an ask with no `--to` goes to; any
 operator approves or answers it. In yardr's code the list is `OperatorCalls`, and
-it has twelve calls: `GiveSecret`, which gives the credential a secret ask
+it has fourteen calls: `GiveSecret`, which gives the credential a secret ask
 asks for, `ApproveAsk`, which approves a run ask so that the yard runs
 the command it holds, carrying the approval's values to a hook's register
 call where the card asks for any, `ApproveSetup`, which approves a setup ask with
@@ -7657,7 +7718,9 @@ the preset pick and the account together: typed, taken from a candidate, or
 kept as it stands, `SourceGrants`, which reads every grant of the
 yard's sources, the whole of who may call what, `SessionScreen`,
 which reads what a running session's pane shows, its visible screen with
-the ANSI styling, `Teammates`, which reads the yard's teammates, one row
+the ANSI styling, `Line`, which reads one depot's line, `Prime`, which
+reads what a crew member's session is given at prime from files and
+settings, `Teammates`, which reads the yard's teammates, one row
 per mapped address with its user and devices, and `UninviteTeammate`,
 which files a teammate's removal as a run ask on a new bead; `TelemetryShow`,
 which previews the switch and next request; `TelemetrySet`, which turns
@@ -7679,11 +7742,13 @@ cards](#weighty-cards)). Where they are served, and to whom:
   calls by the token and not by a word of the caller's; it cannot know
   whether an agent on some machine sent the request, so whoever holds
   that token gives and approves as the operator.
-- **Three are the socket's alone.** `DevicePairOpen`, `DevicePairState`
+- **Four are the socket's alone.** `DevicePairOpen`, `DevicePairState`
   and `DevicePairClose` open, read and end a device pairing for a window
   on the yard's own machine. A device token never opens a pairing, so on
   the listener each is answered as a method the yard does not have, to a
   device of the operator too, and down the yard link from the edge alike.
+  So is `Prime`: a role and a depot's rules are text the listener does not
+  carry to any device.
 - **A giving can be a user's own too.** A secret ask with `secret.user`
   asks for that user's own address in a source that tells people (for
   Pushover the user key), and one with `secret.as` for their own
@@ -7728,12 +7793,10 @@ address or credential `user_set`) where the file is new, carry `data.via`.
 So does what an approval through a device writes: the `noted` event of the
 answer, and the event of the change the command made (`peer_added`,
 `peer_allowed`, `peer_url_set`, `peer_intake`, `peer_identity_set`,
-`peer_removed`, `peer_renamed`, `source_added`, `source_removed`,
-`source_set`, `source_granted`, `hook_added`, `identity_set`,
-`sender_unignored`, `subscribed`, `user_set`, `user_added`,
-`user_removed`, `crew_defined`, `crew_restart_requested`,
-`depot_updated`, `setting_changed`, `originator_changed`,
-`timer_removed`), which also carries `approved` with the bead and the
+`peer_removed`, `peer_renamed`, `source_added`, `source_set`,
+`source_granted`, `hook_added`, `identity_set`, `sender_unignored`,
+`subscribed`, `user_set`, `user_added`, `crew_defined`, `depot_updated`,
+`setting_changed`), which also carries `approved` with the bead and the
 ask. A `source_set` that points a source at a file or sets
 its mint command names it, a `user_set` that points a user at a file names
 it, and a `hook_blocked` names the file of the hook's secret: the stream
@@ -7774,13 +7837,13 @@ yard's line for it and what this card does. A routine card has none.
 |---|---|---|
 | `credential` | gives a credential or an address to the yard | every secret ask; `user key`; a setup ask, which takes the account |
 | `as-user` | lets calls or words count as a person's | `source grant ... --as <user>`; a secret ask with `secret.as`; `user identity`; a mapping ask, whose picks write a user's identity |
-| `outside` | lets the yard change something outside it | `source grant` of an update call, or of a preset holding one; `source set` of `calls_per_hour` or `updates_per_hour` that raises the updates a caller can make in an hour, the lower of the two; a setup ask whose presets grant an update call; `pack apply --depot` whose mappings grant an update call or let a crew member open threads |
+| `outside` | lets the yard change something outside it | `source grant` of an update call, or of a preset holding one; `source set` of `calls_per_hour` or `updates_per_hour` that raises the updates a caller can make in an hour, the lower of the two; `source set` of `base` or `host`; a setup ask whose presets grant an update call; `pack apply --depot` whose mappings grant an update call or let a crew member open threads |
 | `code` | brings a program the yard will run | a `source add` that replaces a source, whatever it changes; `source add` and `pack apply` whose command files are new or differ from the copies that stand; a setup ask whose pack brings such files; a depot pack's first install whose plan makes files, groups or crew; `pack apply --depot` with a `--bind`, or whose mappings grant a call that sends a file; `crew add`, which starts a new agent on the role its card shows whole; `group add`, which starts sessions of the command or the agent its card shows; a general run card (`--run-word`, `G:`), which runs any command no card fits as typed and so always weighs `code` |
 | `trust` | widens who the yard listens to | `user add`; `peer allow` adding a kind, raising the mail limit, or exposing, trusting or sending on (`--expose`, `--trust`, `--reach`); `peer add`; `peer set`; `crew set peers=` adding a peer; `hook add`; `pack apply --depot` with `--members` |
 | `reads` | widens what a standing grant of read reaches | `source add` or `pack apply`, or a setup ask, that replaces a declaration with a new or changed read call while someone holds a grant of `read` of it |
 
-A card that narrows (a revoke, a lower limit, `user rm`, `timer rm`, a
-kind taken off a link) is never weighty. A later build may add a class: a
+A card that narrows (a revoke, a lower limit, a kind taken off a link) is
+never weighty. A later build may add a class: a
 client draws one it does not know as weighty, with its line. Show the
 lines first on the card, above everything the asker wrote, as `yardr bead
 ask` prints them: `WEIGHTY · <class>: <line>`.
@@ -7819,13 +7882,14 @@ with `weighed`, and the answer's event records `via` and no `witness`.
 What a strong card brings (a program the yard runs, a link, a user or an
 endpoint the yard listens to) stands after the device is removed
 ([users.md](users.md#devices) says what that costs). The bead page asks
-more: on a hosted yard it approves a strong card under a fresh sign-in.
-Approving starts the gateway re-authentication unless the session's last
-authentication was a strong-card re-authentication by the operator inside
-the gateway's window, and the answer's event records `witness: fresh
-sign-in`. On the socket a strong card is approved as any weighty card is,
-and records `witness: terminal`. A self-hosted yard's bead page approves
-no strong card, and names the terminal command.
+more: on a hosted yard it approves every weighty run or setup card under
+a fresh sign-in. Approving starts the gateway re-authentication unless
+the session's last authentication was a weighty-card re-authentication
+by this user inside the gateway's window, and the answer's event records
+`witness: fresh sign-in`. On the socket a weighty card is approved as
+any weighty card is, and records `witness: terminal`. A self-hosted
+yard's bead page approves no weighty card, and names footplate and the
+terminal command.
 
 The word is the client's. The yard knows who calls by the operator's
 token or shell, and whoever holds either can send `weighed`, so the yard
@@ -7989,7 +8053,7 @@ The file and the store are two writes. When the yard wrote the file and could no
 
 ### `ApproveAsk`
 
-Approves a run ask (an ask of `Bead` with `run`), and the yard runs the command the ask holds, as the one who approves: `run.command`, whole, and nothing else. It is what `yardr bead answer --approve` does, with `--value <name>=<value>` where the card asks for values in the clear (`run.ask`): a hook add the yard registers itself carries them to its register call with the URL and the secret, and keeps none; where the declaration names a check, a retry first lists what stands and adopts a webhook already aimed at the hook. In one write the yard checks that it would write the same card now, makes the change under the command's own check, and records the answer, which holds `ran`. A refused approval changes nothing, records nothing and leaves the ask open. It is the operator's to approve: on the socket it is refused for anyone else and for a call that comes from the pane of an agent, whatever `actor` says, and on the listener it is there for a device of the operator and for no other caller. A command that is a user's own (`subscribe <user> yardr`, `user set <user> tell=<parts>`, `user key <user> <source>`, `user device rm <user> <device>`, `user device pair <user> <device>`) is approved by the one it was asked of, that user or the operator, on the socket; a device of that user is not served the call, except for a device pair approval for their own device, which the listener serves to it as it serves a giving of their own address, judged from the call's body, and `DevicePairCloseSelf`, which ends their own open pairing from their own device the same way. Refused too: an ask that proposes no command; one that was declined, taken back or approved already, since a command runs once for one ask; a `bead@peer`, since a command is approved in the yard that asked and never over a link; values the card asks for nothing of, and a missing one where it asks for any; and an ask whose card is from before the yard changed, where what the command names was replaced under its name or what it changes is no longer what `run.does` says. That one is declined, and asked again if it is still wanted. A weighty card ([weighty cards](#weighty-cards)) is refused unless the call says `weighed`; that refusal changes nothing and leaves the ask open, as it is. A routine card asks for no such word. A strong card — one the yard weighs `trust` or `code` ([weighty cards](#weighty-cards)) — is approved from a device as any weighty card is, with `weighed`: the command runs, and the answer's event carries `via` and no `data.witness`. On a hosted yard the bead page approves it only under a fresh sign-in, which the answer's event records (`data.witness`); a stale witness, or another user's, refuses with the ask open. The answer is then a `noted` event in the stream, and the change is the command's own event, which carries `approved` with the bead and the ask.
+Approves a run ask (an ask of `Bead` with `run`), and the yard runs the command the ask holds, as the one who approves: `run.command`, whole, and nothing else. It is what `yardr bead answer --approve` does, with `--value <name>=<value>` where the card asks for values in the clear (`run.ask`): a hook add the yard registers itself carries them to its register call with the URL and the secret, and keeps none; where the declaration names a check, a retry first lists what stands and adopts a webhook already aimed at the hook. In one write the yard checks that it would write the same card now, makes the change under the command's own check, and records the answer, which holds `ran`. A refused approval changes nothing, records nothing and leaves the ask open. It is the operator's to approve: on the socket it is refused for anyone else and for a call that comes from the pane of an agent, whatever `actor` says, and on the listener it is there for a device of the operator and for no other caller. A command that is a user's own (`subscribe <user> yardr`, `user set <user> tell=<parts>`, `user key <user> <source>`, `user device pair <user> <device>`) is approved by the one it was asked of, that user or the operator, on the socket; a device of that user is not served the call, except for a device pair approval for their own device, which the listener serves to it as it serves a giving of their own address, judged from the call's body, and `DevicePairCloseSelf`, which ends their own open pairing from their own device the same way. Refused too: an ask that proposes no command; one that was declined, taken back or approved already, since a command runs once for one ask; a `bead@peer`, since a command is approved in the yard that asked and never over a link; values the card asks for nothing of, and a missing one where it asks for any; and an ask whose card is from before the yard changed, where what the command names was replaced under its name or what it changes is no longer what `run.does` says. That one is declined, and asked again if it is still wanted. A weighty card ([weighty cards](#weighty-cards)) is refused unless the call says `weighed`; that refusal changes nothing and leaves the ask open, as it is. A routine card asks for no such word. A strong card — one the yard weighs `trust` or `code` ([weighty cards](#weighty-cards)) — is approved from a device as any weighty card is, with `weighed`: the command runs, and the answer's event carries `via` and no `data.witness`. On a hosted yard the bead page approves it only under a fresh sign-in, which the answer's event records (`data.witness`); a stale witness, or another user's, refuses with the ask open. The answer is then a `noted` event in the stream, and the change is the command's own event, which carries `approved` with the bead and the ask.
 
 | argument | type | |
 |---|---|---|
@@ -8071,10 +8135,11 @@ Approves a setup ask (an ask of `Bead` with `setup`), and the yard then applies 
 | `actor` | string | who approves: the operator's name |
 | `weighed` | bool | `true` once the person has seen the card's weight and passed the client's gate; left out, `false`, and a weighty card, which every setup is, is refused |
 | `host` | string | the host of a server of the operator's own, a name or an address with an optional port and nothing else, that every source of the pack declaring a `base_template` is set to, in place of its own address: asked where `setup.host_template` stands, typed by the operator on the card, and an asker has no word for it. It is held to what a base is, in the checks' words, and the typed account's check call goes to it; the yard sets it before it writes the account, so the key is given for that host. An account that stands (`setup.given`) was given for the host in use, so a host given with the request that keeps it holds it back until it is typed again, and with part of it standing (`setup.missing`) every name of `setup.account` is typed with a host. Left out for the address in use, and by a client from before it |
+| `site` | string | the site of the operator's own, one path segment and nothing else, that every source of the pack declaring a `path_template` is set to, in place of its own address: asked where `setup.site_template` stands, typed by the operator on the card, and an asker has no word for it. It is held to what a base is, in the checks' words, and the typed account's check call goes to it; the yard sets it before it writes the account, so the key is given for that host and site together. An account that stands was given for the site in use, so a site given with the request that keeps it holds it back until it is typed again. Left out for the address in use, and by a client from before it |
 
 ```
 POST /call/ApproveSetup
-{"bead":"yd-crm","ask":44,"option":1,"values":{"COURIER_ACCOUNT":"what-the-person-typed"},"actor":"jo","weighed":true}
+{"bead":"yd-crm","ask":44,"option":1,"values":{"COURIER_ACCOUNT":"what-the-person-typed"},"site":"cloud-1","actor":"jo","weighed":true}
 
 {
   "result": {
@@ -8084,6 +8149,7 @@ POST /call/ApproveSetup
     "pack": "courier",
     "preset": "read",
     "given": ["COURIER_ACCOUNT"],
+    "site": "cloud-1",
     "result": "approved, to be carried out"
   }
 }
@@ -8152,9 +8218,10 @@ POST /call/ApproveSetup
 | `account` | string, may be absent | the candidate taken: its `source` in `setup.candidates`; absent when the account was typed or kept |
 | `keep` | bool, may be absent | `true` when the account that stands was kept with a bare preset pick; absent when it was typed or a candidate was taken |
 | `host` | string, may be absent | the host the approval gave, which the server sets the pack's sources to before it writes the account; absent where none was given |
+| `site` | string, may be absent | the site the approval gave, which the server sets the pack's sources to before it writes the account; absent where none was given |
 | `result` | string | `approved, to be carried out`: the server carries the setup out after the call |
 
-What the card holds decides the account. On a first setup, neither `setup.given` nor `setup.missing`, nothing stands yet: the request types every name of `setup.account` in `values`, or names a candidate in `account`. On an update the account file that stands is `setup.account_file`. When it holds every name (`setup.given`), the request sends neither `values` nor `account` to keep it, which the reply says as `keep`, or types every name of `setup.account` to change it, or names a candidate. When it lacks some (`setup.missing`), the request types exactly those names and the others stay where they are, or names a candidate. The reply has one of `given` (the names typed), `account` (the candidate taken) and `keep`. A `host` goes beside the first two on a first setup that asks one (`setup.host_template`), and the reply says it as `host`; the second example takes a candidate for a server of the operator's own.
+What the card holds decides the account. On a first setup, neither `setup.given` nor `setup.missing`, nothing stands yet: the request types every name of `setup.account` in `values`, or names a candidate in `account`. On an update the account file that stands is `setup.account_file`. When it holds every name (`setup.given`), the request sends neither `values` nor `account` to keep it, which the reply says as `keep`, or types every name of `setup.account` to change it, or names a candidate. When it lacks some (`setup.missing`), the request types exactly those names and the others stay where they are, or names a candidate. The reply has one of `given` (the names typed), `account` (the candidate taken) and `keep`. A `host` goes beside the first two on a first setup that asks one (`setup.host_template`), and the reply says it as `host`; a `site` goes the same way where `setup.site_template` stands, and the reply says it as `site`; the second example takes a candidate for a server of the operator's own.
 
 The approval and the answer are one write: the ask is approved, or neither. The carrying out follows after the call: while `ran.result` is `approved, to be carried out` the setup reads as being carried out, and as ran or failed once the server finishes it; read `Bead` again for it. When the call ends without a reply (the server went away), a client cannot know whether the approval landed: say "the yard did not answer; read the card again", never "approved", and read `Bead` again. An open ask is approved again; an approved one is left for the server, whose failure names the account asked again.
 
@@ -8843,6 +8910,102 @@ POST /call/Line
 | `crew[].prompt.why` | string, may be absent | why a card cannot carry it, by the card's own rules; absent where it can |
 | `crew[].prompt.tried` | array of string, may be absent | the prompt path the crew read; present where that file could not be read |
 | `crew[].prompt.error` | string, may be absent | why the lookup could not read the prompt; absent where it could |
+
+### `Prime`
+
+Reads what a crew member's session is given at prime from files and settings, as `yardr prime --crew` prints it: the member's role file, whole, with the path it was read from (a relative `prompt` is read under the member's `dir`); what the prime says of the operator; the titles of the memories it lists; and, for each depot, the rules files its checkout carries. It changes nothing. The role is the file as the session reads it, trimmed, with a `## First run` section replaced by one line once the yard's setup is done, exactly as the prime has it; a member whose config names no `prompt` has no role, and a `prompt` that cannot be read fails the call as it fails the prime. The operator part is the prime's: the style the operator chose with what it asks of an agent, and their note, absent on a yard with neither. The memories are the member's own and the yard's, the 20 most recently written, newest first, with how many that leaves out: a title is shown and a memory's body never is, so what a memory keeps stays in the yard. A depot's rules are its `AGENTS.md` and then its `CLAUDE.md` where they stand at the root of its checkout as regular files, a link followed only while it stays inside the checkout, each at most 1 MiB; a depot with none, or whose checkout is gone, lists `rules` empty and is no error. `.yardr/depot.md` is not a rules file here: it describes how the yard works the depot, and a brief carries it. The session's own state (its handoff, inbox, timers and asks) is not here. A role and a rules file are the operator's to read, so on the socket it is the operator's alone, and no device is served it: the listener answers it as a method the yard does not have, to a device of the operator too, and down the yard link from the edge alike. A crew member the yard has not is `not-found`.
+
+| argument | type | |
+|---|---|---|
+| `crew` | string | the crew member whose prime is read: the name `yardr prime --crew` takes |
+
+```
+POST /call/Prime
+{"crew":"dispatcher"}
+
+{
+  "result": {
+    "role": {
+      "path": "/home/jo/.yardr/crew/dispatcher/roles/dispatcher.md",
+      "text": "# Dispatcher\n\nKeep the signals clear."
+    },
+    "operator": {
+      "name": "jo",
+      "style": "show",
+      "label": "Show me",
+      "tells": "Explain briefly what you do. Show the command you run. Ask when there is a decision to make.",
+      "note": "I read diffs, not prose"
+    },
+    "memories": [
+      {
+        "id": "mem-freeze",
+        "title": "The signal box is closed for the freeze",
+        "scope": "crew:dispatcher",
+        "expires": "2026-10-08T09:30:00Z",
+        "updated_at": "2026-10-08T09:30:00Z"
+      },
+      {
+        "id": "mem-lamps",
+        "title": "Lamps are lit at dusk",
+        "scope": "all",
+        "updated_at": "2026-10-08T09:30:00Z"
+      }
+    ],
+    "memories_omitted": 0,
+    "depots": [
+      {
+        "name": "drafts",
+        "rules": []
+      },
+      {
+        "name": "linegit",
+        "rules": []
+      },
+      {
+        "name": "notes",
+        "rules": [
+          {
+            "path": "/home/jo/notes/AGENTS.md",
+            "text": "# Notes\n\nKeep the inbox empty.\n"
+          },
+          {
+            "path": "/home/jo/notes/CLAUDE.md",
+            "text": "@AGENTS.md\n"
+          }
+        ]
+      },
+      {
+        "name": "yard",
+        "rules": []
+      }
+    ]
+  }
+}
+```
+
+| field of the result | type | |
+|---|---|---|
+| `role` | object, may be absent | the member's role file as its session reads it; absent where its config names no `prompt` |
+| `role.path` | string | the file the role was read from: the `prompt` as the config names it, under the member's `dir` where it is relative |
+| `role.text` | string | the role, trimmed, with its `## First run` section replaced by one line where the yard's setup is done |
+| `operator` | object, may be absent | what a prime says about the operator; absent on a yard with neither `operator_style` nor `operator_note` set |
+| `operator.name` | string | the operator, as the `operator` setting names them; where it is unset, the server's login name, else `operator` |
+| `operator.style` | string, may be absent | the `operator_style` setting: `guide`, `show`, `work` or `report`; absent when only the note is set |
+| `operator.label` | string, may be absent | the answer the style stands for, as the onboarding words it; absent with the style |
+| `operator.tells` | string, may be absent | what the style asks of an agent, as the prime tells it; absent with the style |
+| `operator.note` | string, may be absent | the `operator_note` setting, trimmed; absent where none is set |
+| `memories` | array | the titles of the memories the prime lists for the member, newest first |
+| `memories[].id` | string | the memory's id, which `Bead` reads whole |
+| `memories[].title` | string | the memory's title |
+| `memories[].scope` | string | `all`, or `crew:<name>` for the member's own |
+| `memories[].expires` | time, may be absent | when the memory retires itself; absent for one that never does |
+| `memories[].updated_at` | time | when the memory was last written: the order the list is in |
+| `memories_omitted` | number | how many more memories the member has than the 20 listed |
+| `depots` | array | every depot of the yard, by name |
+| `depots[].name` | string | the depot |
+| `depots[].rules` | array | the depot's rules files, `AGENTS.md` first; empty where its checkout has none |
+| `depots[].rules[].path` | string | the file: the depot's `path` and the file's name |
+| `depots[].rules[].text` | string | the file whole |
 
 ### `Teammates`
 

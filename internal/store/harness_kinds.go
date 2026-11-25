@@ -23,6 +23,7 @@ func Executable(kind string) string {
 // table to them, so a file that renames a label fails until this follows.
 // Read-only: the catalogue is the writer.
 var HarnessLabels = map[string]string{
+	"agy":      "Antigravity",
 	"claude":   "Claude Code",
 	"codex":    "Codex",
 	"grok":     "Grok",
@@ -65,6 +66,9 @@ var PresetNames = []string{
 // (design yardr-m90n 3.5), which a test here holds to the flags, so a
 // preset added without the mark fails until it has it. Read-only.
 var HarnessPresets = map[string][]Permission{
+	"agy": {
+		{Label: "always approve", Args: []string{"--dangerously-skip-permissions"}, Note: "auto-approves all tool permission requests without prompting", Strong: true},
+	},
 	"claude": {
 		{Label: "auto", Args: []string{"--permission-mode", "auto"}, Note: "Claude judges each action; asks only about risky ones"},
 		{Label: "accept edits", Args: []string{"--permission-mode", "acceptEdits"}, Note: "file edits allowed; shell commands still ask"},
@@ -95,6 +99,21 @@ var HarnessPresets = map[string][]Permission{
 		{Label: "auto", Args: []string{"--auto"}, Note: "auto-approves anything not explicitly denied", Strong: true},
 	},
 	"pi": {},
+}
+
+// HarnessOffers are the model ids each harness kind's file offers a
+// person to pick from (its offers), by kind. The store holds a crew
+// member's fallback_model to its own kind by them, so that it imports no
+// internal package; a test in agents pins this table to the catalogue, so
+// a file that offers a new model fails until this follows. A model no
+// kind offers (a full model id, say) is no kind's by this table, and a
+// fallback named by one cannot be told cross-kind from it. Read-only.
+var HarnessOffers = map[string][]string{
+	"claude": {"opus", "fable", "sonnet"},
+	"codex":  {"gpt-6-luna", "gpt-6-astra"},
+	"kimi":   {"kimi-code/k3", "kimi-code/k3-256k", "kimi-code/kimi-for-coding"},
+	"kiro":   {"claude-opus-5.5", "auto", "claude-sonnet-4.5"},
+	"muse":   {"muse-spark-1.3-contributor", "muse-wonder-1.0"},
 }
 
 // HarnessPreset is kind's permission preset called label, in either

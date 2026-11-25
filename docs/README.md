@@ -12,7 +12,7 @@ commands. These pages go deeper. Yardr's [Principles](../README.md#principles) e
 | [setup.md](setup.md) | `yardr setup`: the setup after the onboarding as forms: a depot, its way of working from a pack, a first bead, each page ending in the command it shows; changing over to the yardmaster and back; the same steps as the yardmaster takes them in conversation |
 | [doctor.md](doctor.md) | `yardr doctor`: what a yard has and what it lacks (programs, what runs, setup steps), every line it prints, its JSON; `yardr status`: what runs now and where it is reached |
 | [configuration.md](configuration.md) | what lives in a repo's `.yardr/` and what lives in the store, precedence, where yardr keeps its own state; creating a yard, starting and stopping one (`yardr up`, `yardr down`), a setup that did not finish, starting over |
-| [flows.md](flows.md) | bead lifecycles: named flows depots point at, repo flows on the base branch, which flow wins, type flows, terminal stages, outcomes and `bead done`, the ask a stage a person moves carries, designing a process, drawing a flow (`flow show --svg`, `flow draw`) |
+| [flows.md](flows.md) | bead lifecycles: named flows depots point at, repo flows on the base branch, which flow wins, type flows, terminal stages, outcomes and `bead done`, the ask a stage a person moves carries, designing a process |
 | [line.md](line.md) | how a bead moves in practice, using depot yardr: backlog, yardmaster, builders, review, assembly; a chain or a train, wagons |
 | [dir-depots.md](dir-depots.md) | depots that are a plain directory, not a repository: the `dir` pack `depot init` sets them up from, their flows, a worked example (summarizing a folder of documents) |
 | [packs.md](packs.md) | packs: a yard's flows, groups, roles, crew members and declared sources as one directory; `yardr pack check`, `apply` and `list`, how a pack maps to the yard, the import record and pruning |
@@ -37,7 +37,7 @@ commands. These pages go deeper. Yardr's [Principles](../README.md#principles) e
 | [web.md](web.md) | `yardr web serve`: the yard in a browser, read-only; its pages and their JSON, the layout, the look's tokens, adding a page |
 | [upgrade.md](upgrade.md) | `yardr upgrade`: the install, the scripts refresh, the gate, the check and the rollback; `upgrade --check` asserts the yard runs this build, read-only, one line per check |
 | [otel.md](otel.md) | OpenTelemetry: `yardr otel export` (the event log as OTLP traces and logs), how beads, stages and sessions map to traces and spans, `TRACEPARENT` and `OTEL_RESOURCE_ATTRIBUTES` in every session, Claude Code and Codex, a Grafana example |
-| [telemetry.md](telemetry.md) | yardr's opt-in telemetry: the one switch, the four questions it answers, what each event carries, when a batch is sent, the install id, seeing a batch, stopping, deletion, what the project must be set to |
+| [telemetry.md](telemetry.md) | yardr's opt-in telemetry: the one switch, the five questions it answers, what each event carries, when a batch is sent, the install id, seeing a batch, stopping, deletion, what the project must be set to |
 | [testing.md](testing.md) | the test rules: the 60 s package and 500 ms sleep budgets the gate enforces, parallelism, race at landing only, the incremental landing, the quiet whole-suite run, the re-measure |
 | [architecture.md](architecture.md) | the core types, the future split of `store.API`, the package layers, and which internal package may import which; `TestImportRules` holds the code to it |
 
@@ -61,7 +61,6 @@ internal/depotfile  reading a depot's file from its base, where a bead cannot ha
 internal/hooks      webhook endpoints: each delivery becomes one hook event
 internal/chat       the view behind yardr chat
 internal/pack       reads a pack and plans what importing it would change
-internal/flowdraw   draws a flow as a signalling diagram (SVG); go generate writes docs/flows from the starter pack
 internal/yardkey    a yard's key pair and the signatures between linked yards
 internal/pairing    linking two yards from a short code
 internal/peer       unix-socket peer identity for the store and exec runner

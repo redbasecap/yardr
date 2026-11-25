@@ -39,6 +39,7 @@ const (
 	ActChangeGroup        Action = "change a group"             // Object.Does names the key
 	ActAddDevice          Action = "add a device"
 	ActEndDevicePairing   Action = "end a device's pairing"
+	ActAddDepot           Action = "add a depot"
 	ActChangeDepotPath    Action = "change a depot's path"
 	ActChangeDepotTest    Action = "change a depot's test command"
 	ActChangeDepotBase    Action = "change a depot's base"
@@ -79,7 +80,7 @@ const (
 	ActAllowThreads       Action = "let a crew member open threads" // Object.Does names whom and where
 	ActRemoveTimer        Action = "remove a timer"                 // Object.Does names the timer
 	ActRemoveDevice       Action = "remove a device"                // the user's own, or the operator's
-	ActTakeBackAsk        Action = "take an ask back"               // its asker's, or the operator's
+	ActTakeBackAsk        Action = "take an ask back"               // its asker's, the operator's, or a stage ask's addressee passing it up
 	ActReadInbox          Action = "read an inbox"                  // its user's, or the operator's; Object.Does says read or acknowledge
 	ActSpeakAs            Action = "speak as a crew member"         // its own session's, or the operator's
 	ActAnswerAsk          Action = "answer an ask"                  // its addressee's, or an operator's
@@ -216,9 +217,8 @@ type Object struct {
 // does is the words a refusal names the deed in.
 func (o Object) does(act Action) string { return or(o.Does, string(act)) }
 
-// CorePolicy is today's rules: an operator (a user whose role is
-// RoleOperator) does what defines the yard, a user what is their own, and
-// an agent's pane none of either, each as coreRules says.
+// CorePolicy is today's rules: an operator does what defines the yard, a user
+// what is their own, and an agent's pane none of either, each as coreRules says.
 var CorePolicy Policy = corePolicy{}
 
 type corePolicy struct{}
@@ -277,11 +277,11 @@ var coreRules = map[Action]rule{}
 func init() {
 	for _, act := range []Action{
 		ActChangeOriginator, ActGrantCrew, ActEndDevicePairing,
-		ActChangeDepotPath, ActChangeDepotKind, ActRemoveDepot,
+		ActAddDepot, ActChangeDepotPath, ActChangeDepotKind, ActRemoveDepot,
 		ActMoveLinks, ActReplaceHook, ActChangeHookSource, ActChangeHookUnknown, ActRemoveHook,
 		ActPair, ActMapPeerIdentity, ActUnmapPeerIdentity, ActAddPeer, ActRemovePeer, ActExposeToPeer,
 		ActTrustPeerName, ActSendAsksToPeer, ActAllowPeerMessages, ActRaisePeerMail, ActChangePeerAddress,
-		ActRenamePeer, ActRoutePeerBeads, ActMoveSource, ActSetUpPackSources, ActChangeRoute, ActChangeFlow,
+		ActRenamePeer, ActRoutePeerBeads, ActMoveSource, ActSetUpPackSources, ActChangeFlow,
 		ActBringUp,
 		ActAddUser, ActRemoveUser, ActChangeRole, ActMapIdentity, ActChangeSetting, ActPruneStore,
 		ActGiveHarnessKey, ActGiveCrewCredential, ActGiveHookSecret, ActAllowThreads, ActRemoveTimer,
@@ -906,20 +906,6 @@ func ruleRemoveDevice(ctx context.Context, tx *bolt.Tx, actor string, _ Action, 
 		return err
 	}
 	return fmt.Errorf("only %s or %s may remove a device of %s; this is %s", user, operator, user, this)
-}
-
-// ruleTakeBackAsk refuses taking ask Object.Seq back to anyone but who
-// asked it (Object.Whose) and the operator.
-func ruleTakeBackAsk(ctx context.Context, tx *bolt.Tx, actor string, _ Action, obj Object) error {
-	asker := obj.Whose
-	if actor == asker {
-		return nil
-	}
-	operator, this, err := notOperator(ctx, tx, actor)
-	if err != nil || this == "" {
-		return err
-	}
-	return fmt.Errorf("only %s, who asked it, or %s may take ask %d back; this is %s", asker, operator, obj.Seq, this)
 }
 
 // ruleAnswerAsk refuses an answer to a plain ask (Object.Seq) by anyone

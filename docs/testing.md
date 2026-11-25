@@ -31,6 +31,17 @@ suites side by side make a load and times of their own, and a time over
 60 s must be the package's own to judge it by (yardr-t4c0).
 Over 60 s alone fails the run and names both times; 60 s or less passes
 with a `test: R1:` line naming both times and marking the first run as loaded.
+One exception, on that quiet fail path alone: the gate runs the same
+package alone at the base, in a temporary worktree it removes after, and
+a package over 60 s alone there too passes the landing with a
+`test: R1:` line naming the run's, the alone and the base's times and
+the fix bead a person now owes for the base's time, as a flake's line
+names the bead a hand files for it: the time is the base's, not the
+change's. Under budget at the base fails as before,
+and a base run that cannot start, fails or prints no seconds falls back
+to that failure. No fix bead is filed and no allow-list row is added by
+the gate: a person files the bead, and its fix deletes the row it adds
+to the list in `.yardr/test`.
 Load multiplies package times up to ~2.5x, so the first run's time by
 itself does not fail the gate.
 The re-measurement can be loaded too: the race lock holds off the other
@@ -312,14 +323,20 @@ nothing
 will land, every time"), and its landing gate differs from any plain
 run (`whole()` in `.yardr/test`: the selection plus the six black-box
 suites with `-race`, vet for linux too, the socket leg beside), so no
-plain test line ever satisfies it. The test line carries the run's wall time
-and race-lock wait, written by `.yardr/test` itself so every note holds
-them: `test: sh .yardr/test @ <sha>: pass, <n> packages ok, 0 failed, 112 s,
-waited 40 s`. The fields are the result, the packages passed and failed, the
-run's wall seconds, and the seconds it queued on the machine-wide race lock:
-`waited 0 s` on most builder and review lines -- a leaf selection takes no
-lock -- and a wait on a landing's, or on a whole-suite plain run's that
-queued behind one.
+plain test line ever satisfies it. The test line carries the run's wall time,
+race-lock wait and what it compared with, written by `.yardr/test` itself so
+every note holds them: `test: sh .yardr/test @ <sha>: pass, <n> packages ok,
+0 failed, 112 s, waited 40 s (base <base>, 7 files changed)`. The fields
+are the result, the packages passed and failed, the run's wall seconds, the
+seconds it queued on the machine-wide race lock (`waited 0 s` on most builder
+and review lines -- a leaf selection takes no lock -- and a wait on a
+landing's, or on a whole-suite plain run's that queued behind one), and what
+it compared with: the base it selected from and how many files had changed
+since. A reviewer holds those two against the branch's diff
+(`git diff --no-renames --name-only <base> | wc -l`), so a run that selected
+from less than the branch changed shows in its line, and not only in a
+landing that finds what the run missed. A landing with no comparable base
+runs the whole suite and says `(no comparable base)` there.
 
 R5. The landing runs the incremental selection -- today's package pick --
 plus always the six black-box suites (contrib/assembly, contrib/peer,
@@ -441,6 +458,32 @@ week after the last fix bead lands, against the design's table and its
 attached JSON, with the deltas per package, the new per-bead cost, and
 the same-sha rerun rate counted against R4. Every rule that missed is a
 filed follow-up or a closed wont-fix with the number.
+
+## A short run
+
+`go test -short ./...` is a fast local pass. It omits the end-to-end
+suites, which build the tree's binary and drive it, and `contrib/shot`,
+whose real Chrome and deadline tests are the long pole of a quiet full
+run. The seven packages are `contrib/shot`, `contrib/assembly`,
+`contrib/peer`, `contrib/deploy`, `contrib/server-yard`,
+`contrib/isolated-yard` and `contrib/release`. Each one's `TestMain`
+returns before any test when `-short` is set, and before the build the
+suite would otherwise do first. Subpackages of those directories, such as
+`contrib/isolated-yard/fake`, stay in the short run: the black-box suite
+the landing names is the parent package.
+
+The gate never passes `-short`. `sh .yardr/test` does not, with or without
+`YARDR_LANDING=1`, so a landing still runs the six black-box suites (R5)
+and a quiet run still runs the whole suite (R6). CI's plain jobs do not
+either: `go test ./...` and `YARDR_TEST_RPC=1 go test ./...` in
+`.github/workflows/ci.yml`, and the same two steps in `release.yml`. Those
+runs keep the coverage a short run leaves out. A person at a checkout uses
+`-short` for a fast pass; the gate and CI are the runs that cover these
+suites.
+
+Three release tests also skip on their own under `-short`, because they
+build yardr. The package's `TestMain` omits the whole suite first, which
+covers those and the rest.
 
 ## Running a package's tests on Linux
 
@@ -654,6 +697,18 @@ alone, and two that shrink the same file, or neighbouring files, never
 conflict on a row: the ceiling only falls, the landing lowers rows to
 actual, and nothing else edits a row.
 
+A generated file has no ceiling and no row, at any size. A non-test `.go`
+file whose first line is the marker `go help generate` gives,
+`// Code generated ... DO NOT EDIT.`, is skipped by the budget, draws no
+warning, and `sh .yardr/test sizes` names it exempt. Its size follows what its
+generator reads (the socket client's follows `store.API`), so a ceiling that
+only falls would fail it at the next method, and a person reads it at its
+source, the generator and the API, not at the artifact. Only the first line
+counts: a file that carries the marker lower down, or without its closing
+period, is judged like any other, which fails safe and gets noticed. The root
+package's test holds the table to no row for a generated file, as it holds it
+to none for a test file.
+
 The assembly lowers them. Where the depot's test command is a file of the
 branch that carries the table, as `.yardr/test` is,
 `contrib/assembly/merge-local` and, for a train, `integrate-train` run
@@ -694,10 +749,12 @@ take: none of a run's steps, no git and no go, and no test line (which would
 pass for the record of a run). It prints a line for each listed file, as
 `test: sizes: <file> <lines>/<ceiling> (<room>)` with the room signed (negative
 for a file over its ceiling); for each row whose file is gone, as
-`test: sizes: <file> gone, its row says <n>: the landing deletes the row`; and
-for each file with no row once fewer than 50 lines are left before the 1000 it
-fails at, marked `no row, fails over 1000`. With a path it prints that file's
-line alone, whatever its size. The report judges nothing and always exits 0.
+`test: sizes: <file> gone, its row says <n>: the landing deletes the row`; for
+each file with no row once fewer than 50 lines are left before the 1000 it
+fails at, marked `no row, fails over 1000`; and for each generated file,
+whatever its size, as `test: sizes: <file> <lines> lines, generated, exempt`.
+With a path it prints that file's line alone, whatever its size. The report
+judges nothing and always exits 0.
 Run it before planning a change to a file over 1000 lines: a listed file has no
 room, since the landing keeps its row at its size, so a change that grows one
 splits it first. `sh .yardr/test sizes --rewrite` is a second mode of the same
@@ -711,7 +768,8 @@ has <lines> lines, <n> under its <ceiling>-line ceiling ...`. A listed file's
 ceiling is its filesizes row; a file with no row has a ceiling of 1000. The
 warning appears even when formatting, vet or build fails first, so a builder
 sees the file before planning a change. Listed files at their rows are warned
-of too, since they have no room under their ceiling.
+of too, since they have no room under their ceiling. A generated file has no
+ceiling, so no warning names it at any size.
 
 ## Pruning tests
 

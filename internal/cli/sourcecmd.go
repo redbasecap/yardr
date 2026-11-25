@@ -223,15 +223,11 @@ credential goes only to a host the file declares.
     us: https://crm.example.com/api/v2
     eu: https://eu.crm.example.com/api/v2
 
-A service the operator may run on a server of their own declares the address
-that server answers at under base_template, with {host} once, straight after
-https://, and the path every call is under: yardr source set <name> host=<host>
-sends the calls to it, and to the base with none set. The host is a name or an
-address with an optional port and nothing else, typed by the operator alone,
-and the address it makes is held to what a base is.
+A service the operator may run on a server of their own declares the address that server answers at under base_template, with {host} once, straight after https://, and the path every call is under: yardr source set <name> host=<host> sends the calls to it, and to the base with none set. The host is a name or an address with an optional port and nothing else, the operator's to approve, and the address it makes is held to what a base is. A service that scopes its calls by site declares the address one path segment varies under path_template, with {site} once as that one segment and never as the host: yardr source set <name> site=<site> sends the calls to it, keyed to that site.
 
   base: https://api.crm.example.com/v2
   base_template: https://{host}/api/v2
+  path_template: https://api.example.com/ex/{site}/wiki
 
 idempotency names the header a service takes a key in, by which it tells an
 update it was sent before from a new one. yardr call then sends each update
@@ -796,7 +792,7 @@ credential in it whether their file sets that. The value is never printed.
 				if d.About != "" {
 					fmt.Fprintf(w, "  %s\n", d.About)
 				}
-				for _, line := range []string{basesLine(d), hostLine(d, src)} {
+				for _, line := range []string{basesLine(d), hostLine(d, src), siteLine(d, src)} {
 					if line != "" {
 						fmt.Fprintf(w, "  %s\n", line)
 					}
@@ -817,7 +813,7 @@ credential in it whether their file sets that. The value is never printed.
 					fmt.Fprintln(w, "  check: the file names no call for it")
 				}
 				for _, call := range d.Calls {
-					line := fmt.Sprintf("  call %s  %s  %s", call.Name, call.Kind, call.Line())
+					line := fmt.Sprintf("  call %s  %s  %s", call.Name, callKindWord(call), call.Line())
 					if call.About != "" {
 						line += "  " + call.About
 					}
@@ -1080,8 +1076,8 @@ identity hearing, which ignores nothing.`,
 	ignore.Flags().String("rm", "", "stop ignoring this sender id")
 
 	set := &cobra.Command{
-		Use:   "set <name> env_file=<file> | mint_command=<program> [args...] | calls_per_hour=<n> | updates_per_hour=<n> | base=<name>",
-		Short: "Change a source's credential, per-hour call limits or region base",
+		Use:   "set <name> env_file=<file> | mint_command=<program> [args...] | calls_per_hour=<n> | updates_per_hour=<n> | base=<name> | host=<host> | site=<site>",
+		Short: "Change a source's credential, per-hour call limits, region base, host or site",
 		Long: `env_file is a file of KEY=VALUE lines that sets the variable the source's
 declaration names (credential.env, and credential.update_env where it names
 one). It is held to the rule of every env_file:
@@ -1125,17 +1121,17 @@ names a base_template: a name or an address with an optional port and
 nothing else (crm.example.net, 192.168.1.20:8443), which fills the template,
 so the calls go to https://<host>/ and the path the declaration gives. It is
 held to the checks of a base (https, no user, query or fragment), refused
-where the file names no template, and typed by the operator alone: an agent
-is refused it, on its pane and as a card. host and base replace each other,
+where the file names no template, and the operator's to approve: an agent
+is refused it on its pane, and proposes it on a card instead. host, site and base replace each other,
 and host= with nothing after it is the declaration's own base again. A
-credential given for another host is held back from this one, naming both,
+credential given for another host is held back from this one, naming both; site is one path segment the declaration's path_template fills (a service that scopes its calls by site, as https://api.example.com/ex/{site}/wiki): one segment and nothing else, held to the checks of a base, refused where the file names no path_template, and its credential is keyed to the host with the segment after it, so a credential given for one site is held back from another on the same host, naming both, until given again: setting a site never carries a key to it; site= with nothing after it is the declaration's own base again. A
 until it is given again (yardr source key): setting a host never carries a
 key to it.
 
 Setting env_file or base is where a credential comes from and where it is
-sent, so it also pairs the credential with the host the source's calls go to
+sent, so it also pairs the credential with the host (and site, where one is set) the source's calls go to
 afterwards (see yardr source key), but for a base that takes the source off a
-host: that key is held back too.`,
+host or a site: that key is held back too.`,
 		Example: `  umask 077
   IFS= read -rs v && printf 'CRM_TOKEN=%s\n' "$v" > ~/.yardr/sources/crm.env; unset v
   chmod 600 ~/.yardr/sources/crm.env
@@ -1144,12 +1140,12 @@ host: that key is held back too.`,
   yardr source set crm calls_per_hour=20
   yardr source set crm updates_per_hour=3
   yardr source set posthog base=eu
-  yardr source set crm host=crm.example.net`,
+  yardr source set crm host=crm.example.net  # a site of a path_template source: yardr source set wiki site=cloud-1`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
 			key, value, ok := strings.Cut(args[1], "=")
 			if !ok || !slices.Contains(store.SourceSettings, key) {
-				return fmt.Errorf("%q: want %s=<file>, %s=<program> [args...], %s=<n>, %s=<n>, %s=<name> or %s=<host>, the settings a source has", args[1], store.SourceEnvFile, store.SourceMintCommand, store.SourceCallsPerHour, store.SourceUpdatesPerHour, store.SourceBase, store.SourceHost)
+				return fmt.Errorf("%q: want %s=<file>, %s=<program> [args...], %s=<n>, %s=<n>, %s=<name>, %s=<host> or %s=<site>, the settings a source has", args[1], store.SourceEnvFile, store.SourceMintCommand, store.SourceCallsPerHour, store.SourceUpdatesPerHour, store.SourceBase, store.SourceHost, store.SourceSite)
 			}
 			st, err := a.store(c.Context())
 			if err != nil {
@@ -1216,7 +1212,7 @@ host: that key is held back too.`,
 			}
 			switch key {
 			case store.SourceEnvFile, store.SourceMintCommand:
-			case store.SourceBase, store.SourceHost:
+			case store.SourceBase, store.SourceHost, store.SourceSite:
 				d, err := saved.Declaration()
 				if err != nil {
 					return err
@@ -1572,7 +1568,7 @@ process for it. Nothing of the request is written anywhere.`,
 				}
 				stateOf = func() (string, error) { return d.UserCredentialState(u.Name, u.EnvFile, store.ReadEnvFileEntries) }
 				readOf = func(ctx context.Context) (string, string, error) {
-					return d.ReadUserCredential(ctx, u.Name, u.EnvFile, src.Mint, source.Read, store.ReadEnvFileEntries)
+					return a.readUserBound(ctx, st, src, d, u)
 				}
 				saidAs = " as " + u.Name
 			}
@@ -1651,7 +1647,7 @@ process for it. Nothing of the request is written anywhere.`,
 					if json.Unmarshal(res.Answer, &obj) == nil {
 						for _, name := range call.Answer.Select {
 							if raw, ok := obj[name]; ok {
-								selected = append(selected, name+": "+checkField(raw))
+								selected = append(selected, printable(name)+": "+checkField(raw))
 							}
 						}
 					}
@@ -1953,9 +1949,9 @@ func callChanges(was, now *source.Declaration) []string {
 		old, had := was.Call(c.Name)
 		switch {
 		case !had:
-			out = append(out, fmt.Sprintf("new call %s (%s): %s", c.Name, c.Kind, c.Line()))
+			out = append(out, fmt.Sprintf("new call %s (%s): %s", c.Name, callKindWord(c), c.Line()))
 		case !sameCall(*old, c):
-			out = append(out, fmt.Sprintf("changed call %s (%s): %s, was (%s) %s", c.Name, c.Kind, c.Line(), old.Kind, old.Line()))
+			out = append(out, fmt.Sprintf("changed call %s (%s): %s, was (%s) %s", c.Name, callKindWord(c), c.Line(), callKindWord(*old), old.Line()))
 		}
 	}
 	for _, c := range was.Calls {
@@ -1972,11 +1968,11 @@ func callChanges(was, now *source.Declaration) []string {
 	return out
 }
 
-// grantWords returns what says a grant's words in a line, an update call
-// marked as one: "customer, note (update), read". It reads the sources
-// once, for every grant it is asked about.
+// grantWords returns what says a grant's words in a line, a call marked
+// as what it does: "customer, note (update), content (file), read". It
+// reads the sources once, for every grant it is asked about.
 func grantWords(ctx context.Context, st store.API) func(store.SourceGrant) string {
-	updates := map[string]bool{} // <source> <call>
+	marks := map[string]string{} // <source> <call> -> its mark, "" for a read
 	if srcs, err := st.Sources(ctx); err == nil {
 		for _, src := range srcs {
 			// One this build does not read has no call it could mark.
@@ -1985,7 +1981,7 @@ func grantWords(ctx context.Context, st store.API) func(store.SourceGrant) strin
 				continue
 			}
 			for _, c := range d.Calls {
-				updates[d.Name+" "+c.Name] = c.Kind == source.Update
+				marks[d.Name+" "+c.Name] = callKindWord(c)
 			}
 		}
 	}
@@ -1993,8 +1989,8 @@ func grantWords(ctx context.Context, st store.API) func(store.SourceGrant) strin
 		words := make([]string, len(g.Calls))
 		for i, w := range g.Calls {
 			words[i] = w
-			if updates[g.Source+" "+w] {
-				words[i] += " (" + source.Update + ")"
+			if mark := marks[g.Source+" "+w]; mark == "file" || mark == source.Update {
+				words[i] += " (" + mark + ")"
 			}
 		}
 		return strings.Join(words, ", ")

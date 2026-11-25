@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"yardr.dev/yardr/internal/pack"
+	"yardr.dev/yardr/packs"
 )
 
 // packShowCmd is yardr pack show: what a pack says of itself that its plan
@@ -16,16 +17,23 @@ import (
 func (a *app) packShowCmd(naming string) *cobra.Command {
 	var sf packFlags
 	return &cobra.Command{
-		Use: "show <pack>", Short: "Print who published a pack, its setup notes, presets and script options",
+		Use: "show <pack>", Short: "Print who published a pack, its setup notes, yardmaster section, presets and script options (and, for starter, the yardmaster base)",
 		Long: `Prints the pack's setup notes (pack.yaml's setup): its author's words
 about what a setup takes — where in the service a webhook is made and which
 events it needs, what an identity wants, how to test. They are the pack's,
 not checked by yardr, and are marked so, as an answer from a source is
-marked as data. A pack without any says so. Then the pack's presets
+marked as data. A pack without any says so. Then its yardmaster section
+(crew's section), whole, under the same marking. Then the pack's presets
 (pack.yaml's presets), if it has any: its suggested grants, numbered in
 file order, each with the calls it grants of each source. Then the env of
 its script groups (groups.<group>.env), if it has any: the options an
 import sets in the cmd of a group it creates.
+
+For starter it prints last the yardmaster base yardr carries now: the
+text a new yard's <home>/roles/yardmaster.md is seeded from (with
+{{operator}} filled in there) and frozen as written. A yard already
+seeded keeps its own file: comparing it with this is how an operator
+sees that the base has moved, and takes it by hand if they want it.
 
 When the pack says who published it (pack.yaml's author and id: a name, and
 the address it is published at), that comes first, marked as the pack's own
@@ -46,6 +54,14 @@ words, which yardr does not check.
 					env[g.Name] = g.Env
 				}
 			}
+			secFile, secText := packYardmasterSection(p), ""
+			if secFile != "" {
+				b, err := readPackSection(p, a.mailHome(), secFile)
+				if err != nil {
+					return fmt.Errorf("pack %s yardmaster section: %w", p.Name, err)
+				}
+				secText = string(b)
+			}
 			v := map[string]any{"pack": p.Name}
 			if p.Author != "" {
 				v["author"] = p.Author
@@ -53,7 +69,15 @@ words, which yardr does not check.
 			if p.ID != "" {
 				v["id"] = p.ID
 			}
-			if p.Setup == "" && len(p.Presets) == 0 && len(env) == 0 {
+			// The yardmaster base is yardr's, not the pack's: starter's
+			// yardmaster text moved into the binary, and show is the
+			// operator's way to read what a new yard would be seeded from.
+			var base string
+			if p.Name == packs.Starter {
+				base = string(pack.YardmasterBase())
+				v["yardmaster_base"] = base
+			}
+			if p.Setup == "" && secFile == "" && len(p.Presets) == 0 && len(env) == 0 && base == "" {
 				return a.out(c.OutOrStdout(), v, func(w io.Writer) {
 					printPublisher(w, p)
 					fmt.Fprintf(w, "pack %s carries no setup notes\n", p.Name)
@@ -61,6 +85,9 @@ words, which yardr does not check.
 			}
 			if p.Setup != "" {
 				v["file"], v["setup"] = p.Setup, p.SetupText
+			}
+			if secFile != "" {
+				v["section_file"], v["section"] = secFile, secText
 			}
 			if len(p.Presets) > 0 {
 				v["presets"] = p.Presets
@@ -75,6 +102,10 @@ words, which yardr does not check.
 				} else {
 					printSetup(w, p.Name, p.Setup, p.SetupText)
 				}
+				if secFile != "" {
+					fmt.Fprintln(w)
+					printSection(w, p.Name, secFile, secText)
+				}
 				if len(p.Presets) > 0 {
 					fmt.Fprintln(w)
 					printPresets(w, p)
@@ -82,6 +113,10 @@ words, which yardr does not check.
 				if len(env) > 0 {
 					fmt.Fprintln(w)
 					printEnv(w, p)
+				}
+				if base != "" {
+					fmt.Fprintln(w)
+					fmt.Fprintf(w, "the yardmaster base, as yardr carries it now (a new yard's roles/yardmaster.md is seeded from it and frozen there):\n\n%s", base)
 				}
 			})
 		},

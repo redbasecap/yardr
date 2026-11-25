@@ -189,6 +189,7 @@ func setupAsked(prefix string) []field {
 		{prefix + "setup.pack", "string", "the pack to set up, of kind source: one yardr embeds, or one the operator applied from a directory and left as it was"},
 		{prefix + "setup.base", "string?", "the selected region base name; absent when calls go to the declaration's own base"},
 		{prefix + "setup.host_template", "string?", "the address a host of the operator's own fills, with `{host}` where it goes (`https://{host}/api/v1`): the card asks for that host above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `host`. Absent where no source the pack carries declares a `base_template`"},
+		{prefix + "setup.site_template", "string?", "the address a site of the operator's own fills, with `{site}` as one path segment (`https://api.example.com/ex/{site}/wiki`): the card asks for that site above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `site`. Absent where no source the pack carries declares a `path_template`"},
 		{prefix + "setup.label", "string?", "where the pack was read from, as the card shows it: the build it is embedded in, or the directory the operator applied it from and the commit it was at"},
 		{prefix + "setup.account", "array of string", "the names to type unseen beside the preset pick"},
 		{prefix + "setup.account_file", "string?", "the file the value goes to, on the yard's machine. A device of the current operator is told it, whoever the ask was put to. Any other device is told the card with the field absent, even the device of a user the ask was put to while they were the operator, and so is every device of a yard with no operator. The socket tells the whole card"},
@@ -288,7 +289,7 @@ var apiCalls = []apiCall{
 			{"files_max", "string", "how many files one mail or note may carry, a whole number in a string; the yard's own count, so a client needs no copy of the number"},
 		},
 		after: "The operator's words are what every session of an agent reads when it starts (`yardr prime`), so the socket tells them to whoever calls, and every other setting with them. Over the network a device is told these keys alone: the words and `hosted` to a device of an operator and to no other, and to none in a yard with no operator; `yard_description` to every device. A `setting_changed` in a device's stream has its `value` only for a key the device is told; for any other it has the `key` and no `value`.\n\n" +
-			"`hosted` is how a client down the link from the edge learns which yard it has reached: a hosted yard takes `GiveSecret` there from the operator's device for every secret, and any other yard for every secret when the call came sealed and for a harness login's code alone when it came plain; either takes a member's own sign-in code from their sealed device ([TLS is yours](#tls-is-yours-and-the-clients-rule)).",
+			"`hosted` is how a client down the link from the edge learns which yard it has reached: a hosted yard takes `GiveSecret` there from the operator's device for every secret, and any other yard for every secret when the call came sealed and for a harness login's code alone when it came plain; either takes a member's own sign-in code from their sealed device and a member's own Google sign-in from their device paired with the QR ([TLS is yours](#tls-is-yours-and-the-clients-rule)).",
 	},
 	{
 		method:   "Users",
@@ -648,7 +649,7 @@ var apiCalls = []apiCall{
 			{"asks[].depot_push.does", "array of string", "what approving changes and what stands now, in the yard's words"},
 			{"asks[].depot_push.back", "string", "the filing that takes the change back"},
 			{"asks[].depot_push.back_by", "string?", "who may file `back`, in words that stand before `can take it back`; absent where that is anyone"},
-			{"asks[].run", "object?", "the command a run ask proposes: one yardr command that is the operator's to give, which the yard runs when the operator approves the ask. Absent on any other ask. Such an ask has no options and takes no words: `AnswerAsk` refuses a pick and words on it, `DeferAsk` and `DeclineAsk` take it as any ask, and it is approved with [`ApproveAsk`](#for-the-operator-alone), by the operator: at the yard (`yardr bead answer <bead> <ask> --approve`, with `--value <name>=<value>` where the card asks for values in the clear), or from a device of the operator. A strong card ([weighty cards](#weighty-cards)) is approved from a device as any weighty card is; the bead page approves it only on a hosted yard, under a fresh sign-in. A command that is a user's own (`subscribe <user> yardr`, `user set <user> tell=<parts>`, `user key <user> <source>`, `user device rm <user> <device>`, `user device pair <user> <device>`) is approved at the yard by the one it was asked of, that user or the operator. All of `run` is the yard's, made when the ask was written, and none of it the asker's: show it apart from `question` and `context`, which are the asker's words, and draw those as plain text"},
+			{"asks[].run", "object?", "the command a run ask proposes: one yardr command that is the operator's to give, which the yard runs when the operator approves the ask. Absent on any other ask. Such an ask has no options and takes no words: `AnswerAsk` refuses a pick and words on it, `DeferAsk` and `DeclineAsk` take it as any ask, and it is approved with [`ApproveAsk`](#for-the-operator-alone), by the operator: at the yard (`yardr bead answer <bead> <ask> --approve`, with `--value <name>=<value>` where the card asks for values in the clear), or from a device of the operator. A strong card ([weighty cards](#weighty-cards)) is approved from a device as any weighty card is; the bead page approves it only on a hosted yard, under a fresh sign-in. A command that is a user's own (`subscribe <user> yardr`, `user set <user> tell=<parts>`, `user key <user> <source>`, `user device pair <user> <device>`) is approved at the yard by the one it was asked of, that user or the operator. All of `run` is the yard's, made when the ask was written, and none of it the asker's: show it apart from `question` and `context`, which are the asker's words, and draw those as plain text"},
 			{"asks[].run.argv", "array of string", "the command in words, without the leading `yardr`, as the yard parsed it. On a run ask that sets a setting, adds a source, or applies a pack with a depot or mappings named, told to a device of the operator alone ([over the network](#over-the-network)): `[]` on any other device's card, and on every device's of a yard with no operator. The socket tells the whole card"},
 			{"asks[].run.command", "string", "the command whole, as it is typed in a terminal and as it would run. Never shorten it: a view that cannot show it whole says where the ask can be read instead. On a run ask that sets a setting, adds a source, or applies a pack with a depot or mappings named, told to a device of the operator alone ([over the network](#over-the-network)): `\"\"` on any other device's card, and on every device's of a yard with no operator. The socket tells the whole card"},
 			{"asks[].run.does", "array of string", "what the command changes and what is there now, in the yard's words, a sentence each, with what it names as the yard knows it"},
@@ -663,6 +664,7 @@ var apiCalls = []apiCall{
 			{"asks[].setup.pack", "string", "the pack to set up, of kind source (one yardr embeds, or one the operator applied from a directory and left as it was), whose `yardr pack show <pack>` prints the presets numbered"},
 			{"asks[].setup.base", "string?", "the selected region base name; absent when calls go to the declarations' own bases"},
 			{"asks[].setup.host_template", "string?", "the address a host of the operator's own fills, with `{host}` where it goes (`https://{host}/api/v1`): the card asks for that host above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `host`. Absent where no source the pack carries declares a `base_template`"},
+			{"asks[].setup.site_template", "string?", "the address a site of the operator's own fills, with `{site}` as one path segment (`https://api.example.com/ex/{site}/wiki`): the card asks for that site above the account, and [`ApproveSetup`](#for-the-operator-alone) takes it as `site`. Absent where no source the pack carries declares a `path_template`"},
 			{"asks[].setup.label", "string?", "where the pack was read from, as the card shows it: the build it is embedded in, or the directory the operator applied it from and the commit it was at"},
 			{"asks[].setup.account", "array of string", "the names the account is made of: the mint's inputs where the pack's credential is minted, else every credential name. A first setup types every one beside the preset pick; an update says by `given` and `missing` which of them the account file that stands holds. Where the card lists candidates, the answer names one of them instead"},
 			{"asks[].setup.account_file", "string?", "the file a typed value goes to, on the yard's machine; on an update, the account file that stands. Told to a device of the operator alone ([over the network](#over-the-network)): absent on any other device's card, and on every device's of a yard with no operator. The socket tells the whole card"},
@@ -820,12 +822,12 @@ var apiCalls = []apiCall{
 	},
 	{
 		method: "TakeBackAsk",
-		says:   "Takes an open ask back: its asker asks it no more, and says why. It is what `yardr bead ask --take-back` does. The ask leaves the person's open decisions and stands among the decided as `taken back`, with `by` and the reason as `words`: \"taken back by `<by>`: `<words>`\", never an answer of the person. It is the asker's to do and the operator's, and is refused for anyone else; refused too on an ask that is answered, declined or taken back already, and on a `bead@peer`, which is taken back in the yard that asked. An ask put aside is taken back as an open one is. `AnswerAsk`, `DeferAsk`, `DeclineAsk` and `GiveSecret` refuse it afterwards, naming who took it back and why. Where the ask also stands in a linked yard it leaves the decisions there as well, with `it was taken back in <peer>'s yard`. It answers nothing; taking it back is then a `noted` event in the stream.",
+		says:   "Takes an open ask back: its asker asks it no more, and says why. It is what `yardr bead ask --take-back` does. The ask leaves the person's open decisions and stands among the decided as `taken back`, with `by` and the reason as `words`: \"taken back by `<by>`: `<words>`\", never an answer of the person. It is the asker's to do and the operator's, and a crew member addressed by a stage ask takes that ask back to pass it up to the stage's people ([flows.md](flows.md#the-ask-template--ask)); it is refused for anyone else; refused too on an ask that is answered, declined or taken back already, and on a `bead@peer`, which is taken back in the yard that asked. An ask put aside is taken back as an open one is. `AnswerAsk`, `DeferAsk`, `DeclineAsk` and `GiveSecret` refuse it afterwards, naming who took it back and why. Where the ask also stands in a linked yard it leaves the decisions there as well, with `it was taken back in <peer>'s yard`. It answers nothing; taking it back is then a `noted` event in the stream.",
 		args: []field{
 			{"bead", "string", "the bead"},
 			{"ask", "number", "the ask note's seq"},
 			{"reason", "string", "why it is asked no more, in a line: the person reads it where the question stood"},
-			{"actor", "string", "who takes it back: the asker's name, or the operator's"},
+			{"actor", "string", "who takes it back: the asker's name, the operator's, or the crew member a stage ask addresses passing it up"},
 		},
 		requests: []string{`{"bead":"yd-greet","ask":%d,"reason":"the design settles the greeting","actor":"jo"}`},
 	},
@@ -1060,7 +1062,7 @@ var apiDeviceChannelKey = func() string {
 // apiOperatorCalls are the calls of the doc that OperatorCalls names:
 // documented and held to the server as apiCalls are, on the socket and on
 // the listener, where the device of the doc is the operator's. The
-// socket's own three (socketOnly) are held on the socket alone: on the
+// socket's own four (socketOnly) are held on the socket alone: on the
 // listener the device half is refused each as a method the yard does not
 // have (networkRefusal).
 var apiOperatorCalls = []apiCall{
@@ -1099,7 +1101,7 @@ var apiOperatorCalls = []apiCall{
 	},
 	{
 		method: "ApproveAsk",
-		says:   "Approves a run ask (an ask of `Bead` with `run`), and the yard runs the command the ask holds, as the one who approves: `run.command`, whole, and nothing else. It is what `yardr bead answer --approve` does, with `--value <name>=<value>` where the card asks for values in the clear (`run.ask`): a hook add the yard registers itself carries them to its register call with the URL and the secret, and keeps none; where the declaration names a check, a retry first lists what stands and adopts a webhook already aimed at the hook. In one write the yard checks that it would write the same card now, makes the change under the command's own check, and records the answer, which holds `ran`. A refused approval changes nothing, records nothing and leaves the ask open. It is the operator's to approve: on the socket it is refused for anyone else and for a call that comes from the pane of an agent, whatever `actor` says, and on the listener it is there for a device of the operator and for no other caller. A command that is a user's own (`subscribe <user> yardr`, `user set <user> tell=<parts>`, `user key <user> <source>`, `user device rm <user> <device>`, `user device pair <user> <device>`) is approved by the one it was asked of, that user or the operator, on the socket; a device of that user is not served the call, except for a device pair approval for their own device, which the listener serves to it as it serves a giving of their own address, judged from the call's body, and `DevicePairCloseSelf`, which ends their own open pairing from their own device the same way. Refused too: an ask that proposes no command; one that was declined, taken back or approved already, since a command runs once for one ask; a `bead@peer`, since a command is approved in the yard that asked and never over a link; values the card asks for nothing of, and a missing one where it asks for any; and an ask whose card is from before the yard changed, where what the command names was replaced under its name or what it changes is no longer what `run.does` says. That one is declined, and asked again if it is still wanted. A weighty card ([weighty cards](#weighty-cards)) is refused unless the call says `weighed`; that refusal changes nothing and leaves the ask open, as it is. A routine card asks for no such word. A strong card — one the yard weighs `trust` or `code` ([weighty cards](#weighty-cards)) — is approved from a device as any weighty card is, with `weighed`: the command runs, and the answer's event carries `via` and no `data.witness`. On a hosted yard the bead page approves it only under a fresh sign-in, which the answer's event records (`data.witness`); a stale witness, or another user's, refuses with the ask open. The answer is then a `noted` event in the stream, and the change is the command's own event, which carries `approved` with the bead and the ask.",
+		says:   "Approves a run ask (an ask of `Bead` with `run`), and the yard runs the command the ask holds, as the one who approves: `run.command`, whole, and nothing else. It is what `yardr bead answer --approve` does, with `--value <name>=<value>` where the card asks for values in the clear (`run.ask`): a hook add the yard registers itself carries them to its register call with the URL and the secret, and keeps none; where the declaration names a check, a retry first lists what stands and adopts a webhook already aimed at the hook. In one write the yard checks that it would write the same card now, makes the change under the command's own check, and records the answer, which holds `ran`. A refused approval changes nothing, records nothing and leaves the ask open. It is the operator's to approve: on the socket it is refused for anyone else and for a call that comes from the pane of an agent, whatever `actor` says, and on the listener it is there for a device of the operator and for no other caller. A command that is a user's own (`subscribe <user> yardr`, `user set <user> tell=<parts>`, `user key <user> <source>`, `user device pair <user> <device>`) is approved by the one it was asked of, that user or the operator, on the socket; a device of that user is not served the call, except for a device pair approval for their own device, which the listener serves to it as it serves a giving of their own address, judged from the call's body, and `DevicePairCloseSelf`, which ends their own open pairing from their own device the same way. Refused too: an ask that proposes no command; one that was declined, taken back or approved already, since a command runs once for one ask; a `bead@peer`, since a command is approved in the yard that asked and never over a link; values the card asks for nothing of, and a missing one where it asks for any; and an ask whose card is from before the yard changed, where what the command names was replaced under its name or what it changes is no longer what `run.does` says. That one is declined, and asked again if it is still wanted. A weighty card ([weighty cards](#weighty-cards)) is refused unless the call says `weighed`; that refusal changes nothing and leaves the ask open, as it is. A routine card asks for no such word. A strong card — one the yard weighs `trust` or `code` ([weighty cards](#weighty-cards)) — is approved from a device as any weighty card is, with `weighed`: the command runs, and the answer's event carries `via` and no `data.witness`. On a hosted yard the bead page approves it only under a fresh sign-in, which the answer's event records (`data.witness`); a stale witness, or another user's, refuses with the ask open. The answer is then a `noted` event in the stream, and the change is the command's own event, which carries `approved` with the bead and the ask.",
 		args: []field{
 			{"bead", "string", "the bead"},
 			{"ask", "number", "the ask note's seq"},
@@ -1142,9 +1144,10 @@ var apiOperatorCalls = []apiCall{
 			{"actor", "string", "who approves: the operator's name"},
 			{"weighed", "bool", "`true` once the person has seen the card's weight and passed the client's gate; left out, `false`, and a weighty card, which every setup is, is refused"},
 			{"host", "string", "the host of a server of the operator's own, a name or an address with an optional port and nothing else, that every source of the pack declaring a `base_template` is set to, in place of its own address: asked where `setup.host_template` stands, typed by the operator on the card, and an asker has no word for it. It is held to what a base is, in the checks' words, and the typed account's check call goes to it; the yard sets it before it writes the account, so the key is given for that host. An account that stands (`setup.given`) was given for the host in use, so a host given with the request that keeps it holds it back until it is typed again, and with part of it standing (`setup.missing`) every name of `setup.account` is typed with a host. Left out for the address in use, and by a client from before it"},
+			{"site", "string", "the site of the operator's own, one path segment and nothing else, that every source of the pack declaring a `path_template` is set to, in place of its own address: asked where `setup.site_template` stands, typed by the operator on the card, and an asker has no word for it. It is held to what a base is, in the checks' words, and the typed account's check call goes to it; the yard sets it before it writes the account, so the key is given for that host and site together. An account that stands was given for the site in use, so a site given with the request that keeps it holds it back until it is typed again. Left out for the address in use, and by a client from before it"},
 		},
 		requests: []string{
-			`{"bead":"yd-crm","ask":%d,"option":1,"values":{"COURIER_ACCOUNT":"what-the-person-typed"},"actor":"jo","weighed":true}`,
+			`{"bead":"yd-crm","ask":%d,"option":1,"values":{"COURIER_ACCOUNT":"what-the-person-typed"},"site":"cloud-1","actor":"jo","weighed":true}`,
 			`{"bead":"yd-crm","ask":%d,"option":1,"account":"courier-existing","host":"courier.example.net","actor":"jo","weighed":true}`,
 			`{"bead":"yd-crm","ask":%d,"option":1,"actor":"jo","weighed":true}`,
 			`{"bead":"yd-crm","ask":%d,"option":1,"values":{"PARCEL_UPDATE_TOKEN":"what-the-person-typed"},"actor":"jo","weighed":true}`,
@@ -1159,12 +1162,13 @@ var apiOperatorCalls = []apiCall{
 			{"account", "string?", "the candidate taken: its `source` in `setup.candidates`; absent when the account was typed or kept"},
 			{"keep", "bool?", "`true` when the account that stands was kept with a bare preset pick; absent when it was typed or a candidate was taken"},
 			{"host", "string?", "the host the approval gave, which the server sets the pack's sources to before it writes the account; absent where none was given"},
+			{"site", "string?", "the site the approval gave, which the server sets the pack's sources to before it writes the account; absent where none was given"},
 			{"result", "string", "`approved, to be carried out`: the server carries the setup out after the call"},
 		},
 		after: "What the card holds decides the account. On a first setup, neither `setup.given` nor `setup.missing`, nothing stands yet: the request types every name of `setup.account` in `values`, or names a candidate in `account`. " +
 			"On an update the account file that stands is `setup.account_file`. When it holds every name (`setup.given`), the request sends neither `values` nor `account` to keep it, which the reply says as `keep`, or types every name of `setup.account` to change it, or names a candidate. " +
 			"When it lacks some (`setup.missing`), the request types exactly those names and the others stay where they are, or names a candidate. " +
-			"The reply has one of `given` (the names typed), `account` (the candidate taken) and `keep`. A `host` goes beside the first two on a first setup that asks one (`setup.host_template`), and the reply says it as `host`; the second example takes a candidate for a server of the operator's own.\n\n" +
+			"The reply has one of `given` (the names typed), `account` (the candidate taken) and `keep`. A `host` goes beside the first two on a first setup that asks one (`setup.host_template`), and the reply says it as `host`; a `site` goes the same way where `setup.site_template` stands, and the reply says it as `site`; the second example takes a candidate for a server of the operator's own.\n\n" +
 			"The approval and the answer are one write: the ask is approved, or neither. The carrying out follows after the call: while `ran.result` is `approved, to be carried out` the setup reads as being carried out, and as ran or failed once the server finishes it; read `Bead` again for it. When the call ends without a reply (the server went away), a client cannot know whether the approval landed: say \"the yard did not answer; read the card again\", never \"approved\", and read `Bead` again. An open ask is approved again; an approved one is left for the server, whose failure names the account asked again.",
 	},
 	{
@@ -1284,6 +1288,37 @@ var apiOperatorCalls = []apiCall{
 			{"crew[].prompt.why", "string?", "why a card cannot carry it, by the card's own rules; absent where it can"},
 			{"crew[].prompt.tried", "array of string?", "the prompt path the crew read; present where that file could not be read"},
 			{"crew[].prompt.error", "string?", "why the lookup could not read the prompt; absent where it could"},
+		},
+	},
+	{
+		method: "Prime",
+		says:   "Reads what a crew member's session is given at prime from files and settings, as `yardr prime --crew` prints it: the member's role file, whole, with the path it was read from (a relative `prompt` is read under the member's `dir`); what the prime says of the operator; the titles of the memories it lists; and, for each depot, the rules files its checkout carries. It changes nothing. The role is the file as the session reads it, trimmed, with a `## First run` section replaced by one line once the yard's setup is done, exactly as the prime has it; a member whose config names no `prompt` has no role, and a `prompt` that cannot be read fails the call as it fails the prime. The operator part is the prime's: the style the operator chose with what it asks of an agent, and their note, absent on a yard with neither. The memories are the member's own and the yard's, the 20 most recently written, newest first, with how many that leaves out: a title is shown and a memory's body never is, so what a memory keeps stays in the yard. A depot's rules are its `AGENTS.md` and then its `CLAUDE.md` where they stand at the root of its checkout as regular files, a link followed only while it stays inside the checkout, each at most 1 MiB; a depot with none, or whose checkout is gone, lists `rules` empty and is no error. `.yardr/depot.md` is not a rules file here: it describes how the yard works the depot, and a brief carries it. The session's own state (its handoff, inbox, timers and asks) is not here. A role and a rules file are the operator's to read, so on the socket it is the operator's alone, and no device is served it: the listener answers it as a method the yard does not have, to a device of the operator too, and down the yard link from the edge alike. A crew member the yard has not is `not-found`.",
+		args: []field{
+			{"crew", "string", "the crew member whose prime is read: the name `yardr prime --crew` takes"},
+		},
+		requests: []string{`{"crew":"dispatcher"}`},
+		fields: []field{
+			{"role", "object?", "the member's role file as its session reads it; absent where its config names no `prompt`"},
+			{"role.path", "string", "the file the role was read from: the `prompt` as the config names it, under the member's `dir` where it is relative"},
+			{"role.text", "string", "the role, trimmed, with its `## First run` section replaced by one line where the yard's setup is done"},
+			{"operator", "object?", "what a prime says about the operator; absent on a yard with neither `operator_style` nor `operator_note` set"},
+			{"operator.name", "string", "the operator, as the `operator` setting names them; where it is unset, the server's login name, else `operator`"},
+			{"operator.style", "string?", "the `operator_style` setting: `guide`, `show`, `work` or `report`; absent when only the note is set"},
+			{"operator.label", "string?", "the answer the style stands for, as the onboarding words it; absent with the style"},
+			{"operator.tells", "string?", "what the style asks of an agent, as the prime tells it; absent with the style"},
+			{"operator.note", "string?", "the `operator_note` setting, trimmed; absent where none is set"},
+			{"memories", "array", "the titles of the memories the prime lists for the member, newest first"},
+			{"memories[].id", "string", "the memory's id, which `Bead` reads whole"},
+			{"memories[].title", "string", "the memory's title"},
+			{"memories[].scope", "string", "`all`, or `crew:<name>` for the member's own"},
+			{"memories[].expires", "time?", "when the memory retires itself; absent for one that never does"},
+			{"memories[].updated_at", "time", "when the memory was last written: the order the list is in"},
+			{"memories_omitted", "number", "how many more memories the member has than the 20 listed"},
+			{"depots", "array", "every depot of the yard, by name"},
+			{"depots[].name", "string", "the depot"},
+			{"depots[].rules", "array", "the depot's rules files, `AGENTS.md` first; empty where its checkout has none"},
+			{"depots[].rules[].path", "string", "the file: the depot's `path` and the file's name"},
+			{"depots[].rules[].text", "string", "the file whole"},
 		},
 	},
 	{
@@ -1569,7 +1604,7 @@ var apiEvents = []apiEvent{
 			{"at", "time", "when"},
 			{"data.note", "number?", "the note's seq; absent on a question another yard asked"},
 			{"data.ask", "number?", "the ask's seq on its bead, for a question another yard asked; absent otherwise"},
-			{"data.witness", "string?", "how a strong approval was witnessed: `fresh sign-in` in the hosted web, `terminal` on the socket; absent otherwise, and on an approval through a device, which names the device in `data.via` instead"},
+			{"data.witness", "string?", "how a weighty approval was witnessed: `fresh sign-in` in the hosted web, `terminal` on the socket; absent otherwise, and on an approval through a device, which names the device in `data.via` instead"},
 		},
 	},
 	{
@@ -1623,6 +1658,21 @@ var apiEvents = []apiEvent{
 			{"data.rounds", "number", "the rounds counted for `data.to`: the outcome's limit or more"},
 			{"data.to", "string", "the stage the outcome leads to, which the bead did not go back to"},
 			{"data.then", "string", "the stage the bead went to instead"},
+		},
+	},
+	{
+		title: "A thread's flap guard held an event: `flap_held`",
+		says:  "A hook's thread made its bounded few beads in a day, so the event that would have made another was held and no bead was made. It is of the class `attention`, so a crew member that hears the class, and a subscription to it, has it. At most one is logged in a day for a thread.",
+		is:    kindOf("flap_held"),
+		fields: []field{
+			{"seq", "number", "the event's seq"},
+			{"kind", "string", "`flap_held`"},
+			{"actor", "string", "`yard`"},
+			{"at", "time", "when"},
+			{"data.hook", "string", "the hook whose table the held event matched"},
+			{"data.event", "string", "the held event's type at its source"},
+			{"data.seq", "number", "the seq of the event that was held"},
+			{"data.made", "number", "the beads the thread made in the day the guard counts"},
 		},
 	},
 }
@@ -2403,7 +2453,49 @@ calls:
 	// The yard's description, so that Settings shows the key to a
 	// device. Last, for the seqs above.
 	must(st.SetSetting(ctx, store.YardDescriptionSetting, "The yard where the south team keeps its work.", "jo"))
+	// A thread held by its flap guard, for the stream's flap_held. Last
+	// again, for the seqs above.
+	must(st.LogDispatch(ctx, "", "flap_held", "yard", map[string]any{"hook": "gh", "event": "issues", "seq": 41, "made": 3}))
 	return st, d.Token
+}
+
+// apiPrimeFixtures adds what the Prime read answers only when it is made,
+// so the other API examples keep their own crew, memories and sequence
+// numbers: a crew member whose role stands under its own directory, the
+// memories its prime lists (ids of the doc's own, so that it is the same on
+// every run), and the rules files a depot's checkout carries.
+func apiPrimeFixtures(t *testing.T, st *store.Store) {
+	t.Helper()
+	ctx := context.Background()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir := filepath.Join(t.TempDir(), "crew", "dispatcher")
+	must(os.MkdirAll(filepath.Join(dir, "roles"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "roles", "dispatcher.md"), []byte("# Dispatcher\n\nKeep the signals clear.\n"), 0o644))
+	_, err := st.PutCrew(ctx, store.CrewMember{Name: "dispatcher", Runner: "herdr", Dir: dir,
+		Config: map[string]any{"kind": "claude", "prompt": "roles/dispatcher.md"}}, "jo")
+	must(err)
+	memory := func(id, title, scope string, expires *time.Time) {
+		t.Helper()
+		meta := map[string]any{"scope": scope}
+		if expires != nil {
+			meta["expires_at"] = expires.UTC().Format(time.RFC3339)
+		}
+		_, err := st.CreateBead(ctx, store.NewBead{ID: id, Title: title, Type: store.TypeMemory, Stage: "memory",
+			Labels: []string{"scope:" + scope}, Metadata: meta}, "jo")
+		must(err)
+	}
+	memory("mem-lamps", "Lamps are lit at dusk", "all", nil)
+	retire := time.Now().Add(7 * 24 * time.Hour)
+	memory("mem-freeze", "The signal box is closed for the freeze", "crew:dispatcher", &retire)
+	notes, err := st.GetDepot(ctx, "notes")
+	must(err)
+	must(os.WriteFile(filepath.Join(notes.Path, "AGENTS.md"), []byte("# Notes\n\nKeep the inbox empty.\n"), 0o644))
+	must(os.WriteFile(filepath.Join(notes.Path, "CLAUDE.md"), []byte("@AGENTS.md\n"), 0o644))
 }
 
 // apiLineFixtures adds richer records only when the Line call is made, so
@@ -2608,6 +2700,7 @@ func apiSetupSource(name string) string {
 	return "name: " + name + "\nbase: https://" + name + ".example.com/api\n" +
 		"bases:\n  us: https://" + name + ".example.com/api\n  eu: https://eu." + name + ".example.com/api\n" +
 		"base_template: https://{host}/api\n" +
+		"path_template: https://courier.example.com/ex/{site}/api\n" +
 		"credential:\n  env: COURIER_TOKEN\n  header: \"Authorization: Bearer {credential}\"\n" +
 		"  mint: [COURIER_ACCOUNT]\n  mint_command: [courier-mint]\n" +
 		"calls:\n  ping: { kind: read, request: { method: GET, path: /me } }\n" +
@@ -2699,7 +2792,7 @@ type apiRun struct {
 }
 
 // networkRefusal is the refusal the listener answers for a request of
-// method: the socket's own three are no method at all to a device, the
+// method: the socket's own four are no method at all to a device, the
 // operator's included. ok is false where the network replays the call as
 // the doc shows it, every approval among them.
 func networkRefusal(method string) (want string, ok bool) {
@@ -2741,6 +2834,9 @@ func runAPI(t *testing.T, network bool) *apiRun {
 		for i, body := range c.requests {
 			if c.method == "Line" && i == 0 {
 				apiLineFixtures(t, st)
+			}
+			if c.method == "Prime" && i == 0 {
+				apiPrimeFixtures(t, st)
 			}
 			if c.method == "OwnBeads" && i == 0 {
 				apiBlockedByFixture(t, st)
@@ -2903,7 +2999,7 @@ func TestCallsAreTheDocs(t *testing.T) {
 	t.Run("OperatorCalls", func(t *testing.T) { callsAreTheDocs(t, "OperatorCalls", OperatorCalls, apiOperatorCalls) })
 	// What the listener serves every device is Calls, as it was before
 	// there was a second list, and a device of the operator ten of the
-	// thirteen calls of OperatorCalls besides; the socket's own three it
+	// fourteen calls of OperatorCalls besides; the socket's own four it
 	// answers as no method at all, and the socket answers so the one call
 	// of Calls a device's token alone makes (listenerOnly): a call is
 	// added to either on purpose, here too.
@@ -2967,8 +3063,8 @@ func callsAreTheDocs(t *testing.T, list string, Calls map[string][]string, apiCa
 
 // The doc's "TLS is yours, and the client's rule" section names every call
 // the listener holds to the in-the-clear rule, which is every call of
-// OperatorCalls but the socket's own three: UserServer.call holds each of
-// the rest through inTheClear, and answers the three as no method at all
+// OperatorCalls but the socket's own four: UserServer.call holds each of
+// the rest through inTheClear, and answers the four as no method at all
 // before any such rule. The section is hand-written prose, held here by
 // presence alone: a future operator call the section does not name fails,
 // so the section is updated with the call. A call named only to contrast
@@ -3017,7 +3113,7 @@ func TestTLSSectionNamesHeldCalls(t *testing.T) {
 // every event of the doc, read from the stream: on the socket, and under
 // /user/ on the yard's listener for a device, which is the same page over
 // TCP. The two halves differ where the door matters: the socket's own
-// three calls are no method at all to a device, and are checked on the
+// four calls are no method at all to a device, and are checked on the
 // socket half alone. Every approval is made on both, the doc's run ask,
 // a trust card, and its courier setups, code cards, among them: a device
 // approves a strong card as the socket does.
@@ -3115,6 +3211,7 @@ func TestCallByName(t *testing.T) {
 		{"Sessions", `[true]`, `{"result":`},
 		{"SessionScreen", `{"session":"yardmaster"}`, `"screen":"\u001b[1mYardr yardmaster\u001b[0m\n❯ "`},
 		{"Line", `{"depot":"yard"}`, `"source":"store"`},
+		{"Prime", `{"crew":"yardmaster"}`, `"memories":[]`},
 		// An argument a later build added is one a client of before leaves
 		// out, by position as by name: weighed is then false, which a
 		// routine card takes, and a weighty one refuses with its words.
@@ -3391,6 +3488,10 @@ func scrubLinePaths(s string) string {
 	return lineRepoCommit.ReplaceAllString(s, `"commit": "0123456789abcdef0123456789abcdef01234567"`)
 }
 
+// primeRulePath is a rules file of the notes depot in a Prime reply, which
+// stands under the test's own temporary directory.
+var primeRulePath = regexp.MustCompile(`"path": "[^"]*/notes/([A-Z]+\.md)"`)
+
 func scrubRouteIDs(s string) string {
 	i := 0
 	return lineRouteID.ReplaceAllStringFunc(s, func(match string) string {
@@ -3457,6 +3558,9 @@ func callsDoc(run *apiRun, calls []apiCall) []string {
 			shown = scrubUUIDs(shown)
 			if c.method == "Line" {
 				shown = scrubLinePaths(scrubRouteIDs(shown))
+			}
+			if c.method == "Prime" {
+				shown = primeRulePath.ReplaceAllString(shown, `"path": "/home/jo/notes/$1"`)
 			}
 			out = append(out, fenced("", "POST /call/"+c.method, body, "", shown)...)
 		}

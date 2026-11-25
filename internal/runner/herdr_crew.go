@@ -172,6 +172,11 @@ func (h *Herdr) StartCrew(ctx context.Context, r store.CrewMember, user string) 
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return nil, fmt.Errorf("crew member directory %q does not exist", dir)
 	}
+	// Before anything is made: a model the kind takes no flag for starts
+	// nothing until it is unset (modelFlagRefused).
+	if err := modelFlagRefused("crew member "+r.Name, "the crew member's kind", r.Config, "", ""); err != nil {
+		return nil, err
+	}
 	secrets, err := h.crewSessionEnv(ctx, r, dir, user)
 	if err != nil {
 		return nil, err
@@ -187,10 +192,18 @@ func (h *Herdr) StartCrew(ctx context.Context, r store.CrewMember, user string) 
 	// it in its place (withEnvFile).
 	kind := agents.Kind(r.Config)
 	env := slices.Concat(config.Env("CREW", r.Name), config.Env("ACTOR", r.Name), config.BlankServerSettings())
+	// As for a bead's agent, a kind that takes its model in the
+	// environment gets that entry here, rendered with the crew member's
+	// model (modelEnv); env_file cannot set it in its place (withEnvFile).
+	env = append(env, modelEnv(r.Config, "")...)
 	// As for a bead's agent, a harness can skip its folder-trust dialog
 	// with an environment entry (Kimi 2.2.0). Blank it when trust is
 	// disabled, so an inherited value or env_file cannot bypass the choice.
 	env = append(env, agents.TrustEnv(kind, r.Config["trust"] != false)...)
+	// As for a bead's agent, a pane has no editor for git to open, so
+	// `git rebase --continue` would park on one (agentEnvWithHook); env_file
+	// cannot set it in its place (withEnvFile).
+	env = append(env, "GIT_EDITOR=true")
 	if user != "" {
 		// How the session's commands read their slice: prime, inbox and
 		// the rest resolve the session from it.

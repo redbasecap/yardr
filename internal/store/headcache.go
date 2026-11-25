@@ -26,9 +26,26 @@ import (
 // waiting on it and then forgotten, so the next call tries again.
 type headCache[K comparable, V any] struct {
 	mu     sync.Mutex
+	gen    uint64
 	kept   map[K]headEntry[V]
 	flying map[K]*headFlight[V]
 }
+
+// clear drops every kept answer and marks in-flight computations stale so
+// they do not repopulate the cache: for a write that changes what a board
+// reads without advancing the event head (RemoveBead).
+func (c *headCache[K, V]) clear() {
+	c.mu.Lock()
+	c.gen++
+	c.kept = nil
+	c.mu.Unlock()
+}
+
+// maxKeptHeadAnswers bounds the answers a headCache keeps across keys:
+// on keeping past the cap the stalest heads are dropped (evict). 32
+// bounds the worst case near 128 MB of UserAsks-size answers while real
+// yards keep a handful of viewers.
+const maxKeptHeadAnswers = 32
 
 // headEntry is one key's last answer: the head it was computed at, the
 // instant it stops being the answer with no write (zero for none), and
@@ -46,6 +63,7 @@ type headEntry[V any] struct {
 // never replaced by an older head's.
 type headFlight[V any] struct {
 	head uint64
+	gen  uint64
 	done chan struct{}
 	val  V
 	err  error
@@ -76,11 +94,12 @@ func (c *headCache[K, V]) do(ctx context.Context, key K, head uint64, now time.T
 			return clone(val), nil
 		}
 		if f, ok := c.flying[key]; ok {
+			gen := c.gen
 			c.mu.Unlock()
 			select {
 			case <-f.done:
-				if f.head != head {
-					continue // another head's answer: ask again at this head
+				if f.head != head || f.gen != gen {
+					continue // another head's or invalidated answer: ask again
 				}
 				if f.err != nil {
 					var zero V
@@ -92,7 +111,7 @@ func (c *headCache[K, V]) do(ctx context.Context, key K, head uint64, now time.T
 				return zero, ctx.Err()
 			}
 		}
-		f := &headFlight[V]{head: head, done: make(chan struct{})}
+		f := &headFlight[V]{head: head, gen: c.gen, done: make(chan struct{})}
 		if c.flying == nil {
 			c.flying = map[K]*headFlight[V]{}
 		}
@@ -102,7 +121,7 @@ func (c *headCache[K, V]) do(ctx context.Context, key K, head uint64, now time.T
 		val, until, err := compute()
 
 		c.mu.Lock()
-		if err == nil {
+		if err == nil && c.gen == f.gen {
 			if c.kept == nil {
 				c.kept = map[K]headEntry[V]{}
 			}
@@ -112,6 +131,7 @@ func (c *headCache[K, V]) do(ctx context.Context, key K, head uint64, now time.T
 			if e, ok := c.kept[key]; !ok || e.head <= head {
 				c.kept[key] = headEntry[V]{head: head, until: until, val: val}
 			}
+			c.evict()
 		}
 		delete(c.flying, key)
 		f.val, f.err = val, err
@@ -122,6 +142,24 @@ func (c *headCache[K, V]) do(ctx context.Context, key K, head uint64, now time.T
 			return zero, err
 		}
 		return clone(val), nil
+	}
+}
+
+// evict drops kept answers with the smallest head until the cache fits
+// the cap, so however many distinct keys compute, the server holds a
+// bounded number of answers. The head already orders the entries, so no
+// list of use is kept. Called with c.mu held.
+func (c *headCache[K, V]) evict() {
+	for len(c.kept) > maxKeptHeadAnswers {
+		var oldest K
+		var oldestHead uint64
+		first := true
+		for k, e := range c.kept {
+			if first || e.head < oldestHead {
+				oldest, oldestHead, first = k, e.head, false
+			}
+		}
+		delete(c.kept, oldest)
 	}
 }
 

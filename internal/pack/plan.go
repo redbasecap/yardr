@@ -182,9 +182,12 @@ type Plan struct {
 	// is that file of the pack. Both are "" for a pack without any. check
 	// prints them after the plan and apply after the result, marked as
 	// the pack's and not yardr's.
-	Setup     string   `json:"setup,omitempty"`
-	SetupFile string   `json:"setup_file,omitempty"`
-	Notes     []string `json:"notes"`
+	Setup     string `json:"setup,omitempty"`
+	SetupFile string `json:"setup_file,omitempty"`
+	// Section is the pack's yardmaster section file, as the pack names it;
+	// "" for a pack that carries none. The record of the import keeps it.
+	Section string   `json:"section,omitempty"`
+	Notes   []string `json:"notes"`
 	// Refused is why this plan must not be applied as it is; empty when it
 	// may be.
 	Refused []string `json:"refused"`
@@ -290,10 +293,14 @@ type RouteOp struct {
 // CrewOp is what the pack sets on a crew member: its role and the event
 // kinds it hears. Everything else of the crew member is the yard's.
 type CrewOp struct {
-	Pack       string   `json:"pack"` // the pack's name for it
-	CrewMember string   `json:"crew"` // the yard's
-	Prompt     string   `json:"prompt,omitempty"`
-	On         []string `json:"on"`
+	Pack       string `json:"pack"` // the pack's name for it
+	CrewMember string `json:"crew"` // the yard's
+	Prompt     string `json:"prompt,omitempty"`
+	// SeedFrom is, for the yardmaster alone, the pack role file its prompt
+	// points at now, whose exact bytes seed the local role (Prompt) when an
+	// import moves the prompt there and there is no local file yet.
+	SeedFrom string   `json:"seed_from,omitempty"`
+	On       []string `json:"on"`
 	// Restart says the crew member is running and its role or what it hears
 	// would change: an import does not restart it.
 	Restart bool `json:"restart,omitempty"`
@@ -582,9 +589,11 @@ type Calls struct {
 	CrewMember string `json:"crew,omitempty"`
 	Source     string `json:"source"`
 	// Wants are what the pack names, in its order: store.GrantRead, and
-	// calls by name. Updates are those of them that are update calls.
+	// calls by name. Updates are those of them that are update calls, and
+	// Files those that answer with a file.
 	Wants   []string `json:"wants"`
 	Updates []string `json:"updates"`
+	Files   []string `json:"files,omitempty"`
 	// Has are those the grantee is granted already: no question.
 	Has []string `json:"has"`
 	// Lacks are those nothing is asked or granted for, and no answer
@@ -612,13 +621,16 @@ func (c Calls) Grantable(call string) bool {
 	return slices.Contains(c.Asks, call) || slices.Contains(c.Declined, call)
 }
 
-// Words are calls as a plan prints them, an update marked as one: "read,
-// note (update)".
+// Words are calls as a plan prints them, each marked as what it does:
+// "read, note (update), content (file)".
 func (c Calls) Words(calls []string) string {
 	words := make([]string, len(calls))
 	for i, w := range calls {
 		words[i] = w
-		if slices.Contains(c.Updates, w) {
+		switch {
+		case slices.Contains(c.Files, w):
+			words[i] += " (file)"
+		case slices.Contains(c.Updates, w):
 			words[i] += " (" + source.Update + ")"
 		}
 	}
